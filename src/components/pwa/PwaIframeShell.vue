@@ -21,6 +21,22 @@ const props = defineProps({
   },
 })
 
+function normalizeIframeParam(value) {
+  if (value === null || value === undefined) return ''
+
+  return String(value).trim()
+}
+
+function pickFirstIframeParam(...values) {
+  for (const value of values) {
+    const normalizedValue = normalizeIframeParam(value)
+
+    if (normalizedValue) return normalizedValue
+  }
+
+  return ''
+}
+
 function applySearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
     if (!key) return
@@ -29,7 +45,15 @@ function applySearchParams(targetParams, sourceParams) {
   })
 }
 
-function resolveIframeUrl(sourceUrl) {
+function applyPwaIdentityParams(targetParams, pwaInfo = {}) {
+  const pwaId = pickFirstIframeParam(pwaInfo.pwa_id, pwaInfo.pwaId, pwaInfo.id)
+  const pwaUrlId = pickFirstIframeParam(pwaInfo.pwa_url_id, pwaInfo.pwaUrlId)
+
+  if (pwaId) targetParams.set('pwa_id', pwaId)
+  if (pwaUrlId) targetParams.set('pwa_url_id', pwaUrlId)
+}
+
+function resolveIframeUrl(sourceUrl, pwaInfo = {}) {
   if (typeof window === 'undefined') return sourceUrl
 
   try {
@@ -44,6 +68,7 @@ function resolveIframeUrl(sourceUrl) {
       )
     }
 
+    applyPwaIdentityParams(targetUrl.searchParams, pwaInfo)
     targetUrl.searchParams.set(PWA_IFRAME_OPEN_MARKER, '1')
 
     return targetUrl.toString()
@@ -60,7 +85,7 @@ const iframeSrc = computed(() => {
   const fallbackUrl = props.loading ? '' : String(H5_APP_URL || '').trim()
   const sourceUrl = detailH5Url.value || fallbackUrl
 
-  return sourceUrl ? resolveIframeUrl(sourceUrl) : ''
+  return sourceUrl ? resolveIframeUrl(sourceUrl, props.pwaInfo) : ''
 })
 
 function reload() {

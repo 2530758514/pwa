@@ -28,6 +28,22 @@ function normalizeConfigUrl(value) {
   return url
 }
 
+function normalizeQueryValue(value) {
+  if (value === null || value === undefined) return ''
+
+  return String(value).trim()
+}
+
+function pickFirstQueryValue(...values) {
+  for (const value of values) {
+    const normalizedValue = normalizeQueryValue(value)
+
+    if (normalizedValue) return normalizedValue
+  }
+
+  return ''
+}
+
 function normalizeCarousel(value) {
   if (typeof value === 'string') {
     return value
@@ -132,9 +148,15 @@ export function normalizePwaInfo(response = {}) {
     payload.download_reward_amount ??
     payload.downloadRewardAmount ??
     ''
+  const pwaId = pickFirstQueryValue(payload.id, payload.pwa_id, payload.pwaId)
+  const pwaUrlId = pickFirstQueryValue(payload.pwa_url_id, payload.pwaUrlId)
 
   return {
     ...payload,
+    pwa_id: pwaId,
+    pwaId,
+    pwa_url_id: pwaUrlId,
+    pwaUrlId: pwaUrlId,
     name,
     publisher,
     logo,
