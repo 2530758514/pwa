@@ -175,6 +175,30 @@ function getCurrentOrigin() {
   return ''
 }
 
+function getDefaultManifestUrl() {
+  const origin = getCurrentOrigin()
+
+  if (!origin) return DEFAULT_MANIFEST_HREF
+
+  try {
+    return new URL(DEFAULT_MANIFEST_HREF, origin).href
+  } catch {
+    return DEFAULT_MANIFEST_HREF
+  }
+}
+
+function resolveAppManifestUrl(manifestHref) {
+  const origin = getCurrentOrigin()
+
+  if (!origin) return manifestHref
+
+  try {
+    return new URL(manifestHref, origin).href
+  } catch {
+    return manifestHref
+  }
+}
+
 function getConfiguredAppBaseUrl() {
   const configuredUrl = PWA_APP_START_URL || PWA_APP_SCOPE_URL || PWA_APP_ID_URL
 
@@ -298,6 +322,46 @@ function normalizeLaunchHandler(launchHandler) {
   return null
 }
 
+function normalizeRelatedApplications(relatedApplications = [], manifestUrl = '') {
+  const applications = Array.isArray(relatedApplications)
+    ? relatedApplications
+        .map((application) => {
+          if (!application || typeof application !== 'object') return null
+
+          const platform = normalizeTextValue(application.platform)
+          const url = normalizeManifestUrl(resolveAbsoluteUrl(application.url, manifestUrl))
+
+          if (!platform || !url) return null
+
+          return {
+            ...application,
+            platform,
+            url,
+          }
+        })
+        .filter(Boolean)
+    : []
+  const webAppUrls = [manifestUrl, getDefaultManifestUrl(), resolveAppManifestUrl(DYNAMIC_MANIFEST_HREF)]
+
+  webAppUrls.forEach((webAppUrl) => {
+    const normalizedWebAppUrl = normalizeManifestUrl(webAppUrl)
+
+    if (
+      normalizedWebAppUrl &&
+      !applications.some((application) => {
+        return application.platform === 'webapp' && application.url === normalizedWebAppUrl
+      })
+    ) {
+      applications.push({
+        platform: 'webapp',
+        url: normalizedWebAppUrl,
+      })
+    }
+  })
+
+  return applications
+}
+
 function normalizeInstallableManifest(manifest) {
   const name = resolveManifestName(manifest)
   const shortName = String(manifest.short_name || manifest.shortName || name).trim()
@@ -318,6 +382,7 @@ function normalizeInstallableManifest(manifest) {
     background_color: manifest.background_color || '#ffffff',
     theme_color: manifest.theme_color || '#ffffff',
     prefer_related_applications: false,
+    related_applications: manifest.related_applications || [],
     icons: ensureInstallIcons(manifest.icons),
     ...(protocolHandlers.length ? { protocol_handlers: protocolHandlers } : {}),
     ...(launchHandler ? { launch_handler: launchHandler } : {}),
@@ -358,6 +423,11 @@ function normalizeManifestPayload(manifest, manifestUrl, overrides = {}) {
         : shortcut?.icons,
     }))
   }
+
+  nextManifest.related_applications = normalizeRelatedApplications(
+    nextManifest.related_applications,
+    manifestUrl,
+  )
 
   return normalizeInstallableManifest(nextManifest)
 }
@@ -423,7 +493,7 @@ function canServeDynamicManifest() {
 }
 
 function createManifestPayloadFromOverrides(overrides = {}) {
-  return normalizeManifestPayload({}, getCurrentOrigin() || DEFAULT_MANIFEST_HREF, overrides)
+  return normalizeManifestPayload({}, getDefaultManifestUrl(), overrides)
 }
 
 function timeout(ms) {

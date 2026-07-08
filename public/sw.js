@@ -26,6 +26,16 @@ const FALLBACK_MANIFEST = {
   theme_color: '#ffffff',
   background_color: '#ffffff',
   prefer_related_applications: false,
+  related_applications: [
+    {
+      platform: 'webapp',
+      url: '/manifest.webmanifest',
+    },
+    {
+      platform: 'webapp',
+      url: '/pwa-dynamic-manifest.webmanifest',
+    },
+  ],
   protocol_handlers: [
     {
       protocol: 'web+hslot',

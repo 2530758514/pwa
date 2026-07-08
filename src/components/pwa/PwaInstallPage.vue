@@ -599,7 +599,12 @@ async function runNativeInstallPrompt() {
       return
     }
 
-    if (result.outcome === 'dismissed' || result.outcome === 'installed') return
+    if (result.outcome === 'installed') {
+      silentlyTryOpenInstalledPwa()
+      return
+    }
+
+    if (result.outcome === 'dismissed') return
   } finally {
     installing.value = false
   }

@@ -1,4 +1,6 @@
-﻿import { computed, onMounted, onUnmounted, readonly, shallowRef } from 'vue'
+import { computed, onMounted, onUnmounted, readonly, shallowRef } from 'vue'
+import { STORAGE_KEYS } from '@/shared/storage/keys'
+import { storage } from '@/shared/storage/storage'
 
 const deferredPrompt = shallowRef(null)
 const isInstalled = shallowRef(false)
@@ -10,11 +12,39 @@ let listenersRegistered = false
 let consumerCount = 0
 let shouldKeepListenersRegistered = false
 let displayModeQuery = null
+let installStateRefreshPromise = null
 
 function sleep(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms)
   })
+}
+
+function readStoredInstallState() {
+  const installState = storage.get(STORAGE_KEYS.pwaInstallState, null)
+
+  if (installState === true) return { installed: true }
+  if (!installState || typeof installState !== 'object') return null
+
+  return installState.installed ? installState : null
+}
+
+function writeStoredInstallState(source) {
+  storage.set(STORAGE_KEYS.pwaInstallState, {
+    installed: true,
+    source,
+    installedAt: Date.now(),
+  })
+}
+
+function clearStoredInstallState() {
+  storage.remove(STORAGE_KEYS.pwaInstallState)
+}
+
+function markInstalled(source) {
+  isInstalled.value = true
+  deferredPrompt.value = null
+  writeStoredInstallState(source)
 }
 
 function resolveStandaloneMode() {
@@ -41,28 +71,89 @@ function resolveIosInstallGuide() {
 function syncStandaloneMode() {
   isStandalone.value = resolveStandaloneMode()
   if (isStandalone.value) {
-    isInstalled.value = true
-    deferredPrompt.value = null
+    markInstalled('standalone')
   }
 }
 
 function handleBeforeInstallPrompt(event) {
   event.preventDefault()
+  clearStoredInstallState()
+  isInstalled.value = false
   hasInstallPromptEvent.value = true
   deferredPrompt.value = event
 }
 
 function handleAppInstalled() {
-  isInstalled.value = true
-  deferredPrompt.value = null
+  markInstalled('appinstalled')
+}
+
+function hasStoredInstallState() {
+  return Boolean(readStoredInstallState())
+}
+
+function isInstalledRelatedWebApp(app) {
+  if (!app || typeof app !== 'object') return false
+
+  return app.platform === 'webapp' || app.platform === 'web'
+}
+
+async function checkInstalledRelatedApps() {
+  if (typeof navigator === 'undefined' || typeof navigator.getInstalledRelatedApps !== 'function') {
+    return false
+  }
+
+  try {
+    const relatedApps = await navigator.getInstalledRelatedApps()
+
+    return Array.isArray(relatedApps) && relatedApps.some(isInstalledRelatedWebApp)
+  } catch {
+    return false
+  }
+}
+
+async function refreshInstalledState() {
+  if (installStateRefreshPromise) return installStateRefreshPromise
+
+  installStateRefreshPromise = (async () => {
+    syncStandaloneMode()
+
+    if (isStandalone.value || isInstalled.value) return isInstalled.value
+
+    if (deferredPrompt.value) {
+      clearStoredInstallState()
+      return false
+    }
+
+    if (await checkInstalledRelatedApps()) {
+      markInstalled('related-apps')
+      return true
+    }
+
+    if (hasStoredInstallState()) {
+      isInstalled.value = true
+      deferredPrompt.value = null
+      return true
+    }
+
+    return false
+  })().finally(() => {
+    installStateRefreshPromise = null
+  })
+
+  return installStateRefreshPromise
+}
+
+function handlePageShow() {
+  void refreshInstalledState()
 }
 
 function registerListeners() {
   if (listenersRegistered || typeof window === 'undefined') return
 
-  syncStandaloneMode()
+  void refreshInstalledState()
   displayModeQuery = window.matchMedia?.('(display-mode: standalone)') || null
   displayModeQuery?.addEventListener?.('change', syncStandaloneMode)
+  window.addEventListener('pageshow', handlePageShow)
   window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   window.addEventListener('appinstalled', handleAppInstalled)
   listenersRegistered = true
@@ -79,6 +170,7 @@ function unregisterListeners() {
   }
 
   displayModeQuery?.removeEventListener?.('change', syncStandaloneMode)
+  window.removeEventListener('pageshow', handlePageShow)
   window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   window.removeEventListener('appinstalled', handleAppInstalled)
   listenersRegistered = false
@@ -100,8 +192,10 @@ export function usePwaInstallPrompt() {
   })
 
   async function promptInstall() {
+    await refreshInstalledState()
+
     if (!deferredPrompt.value || isInstalled.value || isStandalone.value) {
-      return { outcome: 'unavailable' }
+      return { outcome: isInstalled.value || isStandalone.value ? 'installed' : 'unavailable' }
     }
 
     const promptEvent = deferredPrompt.value
@@ -109,10 +203,15 @@ export function usePwaInstallPrompt() {
     try {
       const promptResult = await promptEvent.prompt()
       const choice = promptResult?.outcome ? promptResult : await promptEvent.userChoice
+      const outcome = choice?.outcome || 'unknown'
 
       deferredPrompt.value = null
 
-      return { outcome: choice?.outcome || 'unknown' }
+      if (outcome === 'accepted') {
+        markInstalled('prompt-accepted')
+      }
+
+      return { outcome }
     } catch (error) {
       return {
         outcome: 'failed',
@@ -122,6 +221,8 @@ export function usePwaInstallPrompt() {
   }
 
   async function waitForInstallPrompt(options = {}) {
+    await refreshInstalledState()
+
     if (canPromptInstall.value || typeof window === 'undefined') {
       return canPromptInstall.value
     }
@@ -160,6 +261,7 @@ export function usePwaInstallPrompt() {
     isIosInstallGuide,
     isStandalone: readonly(isStandalone),
     promptInstall,
+    refreshInstalledState,
     waitForInstallPrompt,
   }
 }

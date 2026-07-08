@@ -31,6 +31,7 @@ export function usePwaAddToHomeAction() {
     isInstalled,
     isStandalone,
     promptInstall,
+    refreshInstalledState,
     waitForInstallPrompt,
   } = usePwaInstallPrompt()
   const preparingInstall = shallowRef(false)
@@ -68,6 +69,8 @@ export function usePwaAddToHomeAction() {
   }
 
   async function requestAddToHome(options = {}) {
+    await refreshInstalledState()
+
     if (isInstalled.value || isStandalone.value) {
       return { outcome: 'installed' }
     }
