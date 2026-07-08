@@ -5,7 +5,7 @@ function isBrowserRuntime() {
 }
 
 const PWA_PROTOCOL_LAUNCH_URL = `${PWA_PROTOCOL}:open`
-const PWA_START_LAUNCH_PATH = '/pwa'
+const PWA_START_LAUNCH_PATH = '/'
 const ANDROID_INTENT_ACTION_VIEW = 'android.intent.action.VIEW'
 const ANDROID_INTENT_CATEGORY_BROWSABLE = 'android.intent.category.BROWSABLE'
 

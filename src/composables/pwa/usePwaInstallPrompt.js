@@ -27,6 +27,17 @@ function resolveStandaloneMode() {
   )
 }
 
+function resolveIosInstallGuide() {
+  if (typeof navigator === 'undefined') return false
+
+  const userAgent = navigator.userAgent || ''
+  const isIOS = /iPad|iPhone|iPod/i.test(userAgent)
+  const isSafari = /Safari/i.test(userAgent)
+  const isOtherIosBrowser = /CriOS|FxiOS|EdgiOS|OPiOS/i.test(userAgent)
+
+  return isIOS && isSafari && !isOtherIosBrowser
+}
+
 function syncStandaloneMode() {
   isStandalone.value = resolveStandaloneMode()
   if (isStandalone.value) {
@@ -82,6 +93,10 @@ export function initializePwaInstallPromptListeners() {
 export function usePwaInstallPrompt() {
   const canPromptInstall = computed(() => {
     return Boolean(deferredPrompt.value) && !isInstalled.value && !isStandalone.value
+  })
+
+  const isIosInstallGuide = computed(() => {
+    return resolveIosInstallGuide() && !isInstalled.value && !isStandalone.value
   })
 
   async function promptInstall() {
@@ -142,6 +157,7 @@ export function usePwaInstallPrompt() {
     canPromptInstall,
     hasInstallPromptEvent: readonly(hasInstallPromptEvent),
     isInstalled: readonly(isInstalled),
+    isIosInstallGuide,
     isStandalone: readonly(isStandalone),
     promptInstall,
     waitForInstallPrompt,

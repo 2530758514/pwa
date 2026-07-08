@@ -20,8 +20,6 @@ initializePwaInstallPromptListeners()
 initializePwaDisplayModeClasses()
 applyStoredPwaManifestUrl()
 
-createApp(App).mount('#app')
-
 const canUseServiceWorker =
   'serviceWorker' in navigator && (window.isSecureContext || import.meta.env.PROD)
 const shouldDisableServiceWorker = import.meta.env.VITE_ENABLE_PWA_SW === 'false'
@@ -34,6 +32,7 @@ const shouldClearDevServiceWorker =
 
 if (shouldRegisterServiceWorker) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {})
+  navigator.serviceWorker.addEventListener('controllerchange', applyStoredPwaManifestUrl)
 } else if (shouldClearDevServiceWorker) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
@@ -46,3 +45,5 @@ if (shouldRegisterServiceWorker) {
       .catch(() => {})
   })
 }
+
+createApp(App).mount('#app')

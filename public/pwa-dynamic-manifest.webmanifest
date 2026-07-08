@@ -1,9 +1,9 @@
-﻿{
-  "id": "/pwa",
+{
+  "id": "/",
   "name": "SlotFront H5",
   "short_name": "SlotFront H5",
   "description": "Welcome to our entertainment platform, designed to bring you a smooth, exciting, and enjoyable experience anytime, anywhere.",
-  "start_url": "/pwa",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -13,7 +13,7 @@
   "protocol_handlers": [
     {
       "protocol": "web+hslot",
-      "url": "/pwa?protocol_url=%s"
+      "url": "/?protocol_url=%s"
     }
   ],
   "icons": [

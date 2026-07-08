@@ -10,15 +10,15 @@ const PWA_MANIFEST_CROSSORIGIN = String(import.meta.env.VITE_PWA_MANIFEST_CROSSO
   .trim()
   .toLowerCase()
 
-const MANIFEST_CACHE_NAME = 'pwa-shell-manifest'
-const MANIFEST_INFO_SCHEMA_VERSION = 2
+const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
+const MANIFEST_INFO_SCHEMA_VERSION = 5
 const DEFAULT_ICON_192 = '/pwa-icons/icon-192.png'
 const DEFAULT_ICON_512 = '/pwa-icons/icon-512.png'
-const PWA_APP_ID_PATH = '/pwa'
+const PWA_APP_ID_PATH = '/'
 const PWA_APP_SCOPE_PATH = '/'
-const PWA_APP_START_PATH = '/pwa'
+const PWA_APP_START_PATH = '/'
 export const PWA_PROTOCOL = 'web+hslot'
-export const PWA_PROTOCOL_HANDLER_URL = '/pwa?protocol_url=%s'
+export const PWA_PROTOCOL_HANDLER_URL = '/?protocol_url=%s'
 const PWA_APP_ID_URL = String(import.meta.env.VITE_PWA_APP_ID || '').trim()
 const PWA_APP_SCOPE_URL = String(import.meta.env.VITE_PWA_APP_SCOPE || '').trim()
 const PWA_APP_START_URL = String(import.meta.env.VITE_PWA_APP_START_URL || '').trim()
@@ -303,7 +303,7 @@ function normalizeInstallableManifest(manifest) {
   const shortName = String(manifest.short_name || manifest.shortName || name).trim()
   const startUrl = resolveManifestAppUrl(PWA_APP_START_URL || PWA_APP_START_PATH, PWA_APP_START_PATH)
   const scope = resolveManifestAppUrl(PWA_APP_SCOPE_URL || PWA_APP_SCOPE_PATH, PWA_APP_SCOPE_PATH)
-  const id = resolveManifestAppUrl(PWA_APP_ID_URL || PWA_APP_ID_PATH, PWA_APP_ID_PATH)
+  const id = resolveManifestAppUrl(manifest.id || PWA_APP_ID_URL || PWA_APP_ID_PATH, PWA_APP_ID_PATH)
   const protocolHandlers = normalizeProtocolHandlers(manifest.protocol_handlers)
   const launchHandler = normalizeLaunchHandler(manifest.launch_handler)
 
@@ -398,6 +398,30 @@ function applyManifestLinkHref(link, manifestHref) {
   return manifestHref
 }
 
+function createDynamicManifestHref(version = Date.now()) {
+  const normalizedVersion = Number(version)
+  const safeVersion = Number.isFinite(normalizedVersion) && normalizedVersion > 0 ? normalizedVersion : Date.now()
+
+  return `${DYNAMIC_MANIFEST_HREF}?v=${safeVersion}`
+}
+
+function isDynamicManifestHref(manifestHref) {
+  if (!manifestHref) return false
+
+  try {
+    const manifestUrl = new URL(manifestHref, getCurrentOrigin() || 'https://localhost/')
+    return manifestUrl.pathname === DYNAMIC_MANIFEST_HREF
+  } catch {
+    return false
+  }
+}
+
+function canServeDynamicManifest() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return false
+
+  return Boolean(navigator.serviceWorker.controller)
+}
+
 function createManifestPayloadFromOverrides(overrides = {}) {
   return normalizeManifestPayload({}, getCurrentOrigin() || DEFAULT_MANIFEST_HREF, overrides)
 }
@@ -408,18 +432,44 @@ function timeout(ms) {
   })
 }
 
+function waitForServiceWorkerController(waitMs = SERVICE_WORKER_READY_WAIT_MS) {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return Promise.resolve(false)
+  if (navigator.serviceWorker.controller) return Promise.resolve(true)
+
+  return new Promise((resolve) => {
+    let timer = null
+
+    const cleanup = (controlled) => {
+      if (timer) globalThis.clearTimeout(timer)
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange)
+      resolve(controlled)
+    }
+
+    const handleControllerChange = () => {
+      cleanup(Boolean(navigator.serviceWorker.controller))
+    }
+
+    timer = globalThis.setTimeout(() => cleanup(Boolean(navigator.serviceWorker.controller)), waitMs)
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange)
+  })
+}
+
 async function waitForActiveServiceWorker() {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return false
 
+  if (navigator.serviceWorker.controller) return true
+
   const currentRegistration = await navigator.serviceWorker.getRegistration('/')
-  if (currentRegistration?.active || navigator.serviceWorker.controller) return true
+  if (currentRegistration?.active) return waitForServiceWorkerController()
 
   const readyRegistration = await Promise.race([
     navigator.serviceWorker.ready.catch(() => null),
     timeout(SERVICE_WORKER_READY_WAIT_MS),
   ])
 
-  return Boolean(readyRegistration?.active || navigator.serviceWorker.controller)
+  if (!readyRegistration?.active && !navigator.serviceWorker.controller) return false
+
+  return waitForServiceWorkerController()
 }
 
 export function getStoredPwaManifestInfo() {
@@ -470,6 +520,9 @@ export function applyPwaManifestInfo(info = getStoredPwaManifestInfo()) {
   const manifestHref = normalizeManifestUrl(info.manifestHref)
 
   if (!manifestHref) return ''
+  if (isDynamicManifestHref(manifestHref) && !canServeDynamicManifest()) {
+    return applyManifestLinkHref(link, DEFAULT_MANIFEST_HREF)
+  }
 
   return applyManifestLinkHref(link, manifestHref)
 }
@@ -584,15 +637,16 @@ export async function createAndStorePwaManifest(overrides = {}) {
 }
 
 async function storePwaManifest(manifest, configUrl) {
-  const manifestHref = await cacheDynamicManifest(manifest)
+  const fetchedAt = Date.now()
   const manifestUrl = normalizeManifestUrl(configUrl)
+  const manifestHref = manifestUrl || (await cacheDynamicManifest(manifest, fetchedAt))
 
   const manifestInfo = {
     schemaVersion: MANIFEST_INFO_SCHEMA_VERSION,
     configUrl: manifestUrl,
     manifestHref,
     manifest,
-    fetchedAt: Date.now(),
+    fetchedAt,
   }
 
   if (manifestUrl) {
@@ -611,12 +665,17 @@ async function storePwaManifest(manifest, configUrl) {
   return manifestInfo
 }
 
-async function cacheDynamicManifest(manifest) {
-  if (typeof caches === 'undefined' || typeof Response === 'undefined') return ''
+async function cacheDynamicManifest(manifest, version = Date.now()) {
+  if (
+    typeof caches === 'undefined' ||
+    typeof Response === 'undefined' ||
+    typeof navigator === 'undefined' ||
+    !('serviceWorker' in navigator)
+  ) {
+    return ''
+  }
 
   try {
-    if (!(await waitForActiveServiceWorker())) return ''
-
     const response = new Response(JSON.stringify(manifest), {
       headers: {
         'Content-Type': 'application/manifest+json; charset=utf-8',
@@ -626,8 +685,9 @@ async function cacheDynamicManifest(manifest) {
 
     const cache = await caches.open(MANIFEST_CACHE_NAME)
     await cache.put(DYNAMIC_MANIFEST_HREF, response)
+    void waitForActiveServiceWorker()
 
-    return DYNAMIC_MANIFEST_HREF
+    return createDynamicManifestHref(version)
   } catch {
     return ''
   }

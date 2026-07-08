@@ -23,6 +23,7 @@
       installProgressMeta: '{percent}% (Total 1M)',
       installed: 'Added to home screen',
       accepted: 'Installation started',
+      ready: 'Install is ready. Tap Rapid Install again.',
       secureRequired: 'Open this page over HTTPS or Android localhost, then try again.',
       promptUnavailable: 'Open this page in Chrome and try again from the browser menu.',
     },

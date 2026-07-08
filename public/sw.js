@@ -1,25 +1,25 @@
-const MANIFEST_CACHE_NAME = 'pwa-shell-manifest'
-const SW_VERSION = 'pwa-shell-runtime-v2'
+const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
+const SW_VERSION = 'pwa-shell-runtime-v3'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
-const LEGACY_CACHE_NAMES = ['h5slot-pwa-manifest']
+const LEGACY_CACHE_NAMES = ['h5slot-pwa-manifest', 'pwa-shell-manifest']
 const DYNAMIC_MANIFEST_PATH = '/pwa-dynamic-manifest.webmanifest'
 const STATIC_MANIFEST_PATH = '/manifest.webmanifest'
-const APP_SHELL_PATH = '/pwa'
+const APP_SHELL_PATH = '/'
 const CORE_ASSET_PATHS = [
-  '/',
   APP_SHELL_PATH,
+  DYNAMIC_MANIFEST_PATH,
   STATIC_MANIFEST_PATH,
   '/pwa-icons/icon-192.png',
   '/pwa-icons/icon-512.png',
 ]
 const FALLBACK_MANIFEST = {
-  id: '/pwa',
+  id: '/',
   name: 'SlotFront H5',
   short_name: 'SlotFront H5',
   description:
     'Welcome to our entertainment platform, designed to bring you a smooth, exciting, and enjoyable experience anytime, anywhere.',
-  start_url: '/pwa',
+  start_url: '/',
   scope: '/',
   display: 'standalone',
   orientation: 'portrait',
@@ -29,7 +29,7 @@ const FALLBACK_MANIFEST = {
   protocol_handlers: [
     {
       protocol: 'web+hslot',
-      url: '/pwa?protocol_url=%s',
+      url: '/?protocol_url=%s',
     },
   ],
   icons: [

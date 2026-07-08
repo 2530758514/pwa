@@ -10,6 +10,7 @@ import {
   PWA_SAFETY_ITEMS,
   SOURCE_DOWNLOAD_URL,
 } from '@/content/pwaPageContent'
+import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
@@ -58,9 +59,14 @@ const {
   hasInstallPromptEvent,
   isInstalled,
   isStandalone,
-  promptInstall,
   waitForInstallPrompt,
 } = usePwaInstallPrompt()
+const {
+  nativeInstalling,
+  prepareInstallManifest,
+  preparingInstall,
+  requestAddToHome,
+} = usePwaAddToHomeAction()
 const { tryOpenInstalledPwa } = usePwaLaunchAction()
 
 const installing = shallowRef(false)
@@ -161,7 +167,9 @@ const installProgressText = computed(() =>
       })
     : '',
 )
-const installButtonLoading = computed(() => installing.value || installVisualActive.value)
+const installButtonLoading = computed(
+  () => installing.value || nativeInstalling.value || preparingInstall.value || installVisualActive.value,
+)
 const installButtonDisabled = computed(
   () =>
     installing.value ||
@@ -178,9 +186,13 @@ function appendSearchParams(targetParams, sourceParams) {
 }
 
 async function prepareInstallPrompt(options = {}) {
+  const forceRefresh = options.forceRefresh === true
+
   if (typeof props.loadPwaInfo === 'function') {
-    await props.loadPwaInfo()
+    await props.loadPwaInfo({ force: forceRefresh })
   }
+
+  await prepareInstallManifest({ forceRefresh })
 
   if (!isApplePwaRedirectDevice.value && !canPromptInstall.value) {
     await waitForInstallPrompt(options)
@@ -490,40 +502,34 @@ async function runNativeInstallPrompt() {
 
   if (installPromptShown.value) return
 
-  if (!canPromptInstall.value) {
-    installing.value = true
+  installing.value = true
 
-    try {
-      await prepareInstallPrompt({
-        waitMs: isAndroidPwaInstallDevice.value
-          ? ANDROID_INSTALL_PROMPT_WAIT_MS
-          : DEFAULT_INSTALL_PROMPT_WAIT_MS,
-      })
-    } finally {
-      installing.value = false
+  try {
+    const result = await requestAddToHome({
+      forceRefresh: true,
+      waitMs: isAndroidPwaInstallDevice.value
+        ? ANDROID_INSTALL_PROMPT_WAIT_MS
+        : DEFAULT_INSTALL_PROMPT_WAIT_MS,
+    })
+
+    if (result.outcome === 'accepted') {
+      installPromptShown.value = true
+      startInstallVisualState()
+      schedulePostInstallAction(
+        isInstalled.value ? POST_INSTALL_EVENT_ACTION_DELAY_MS : POST_INSTALL_ACTION_DELAY_MS,
+      )
+      showLocalToast(t('pwaPage.install.accepted'))
+      return
     }
-  }
 
-  if (canPromptInstall.value) {
-    installing.value = true
-
-    try {
-      const result = await promptInstall()
-
-      if (result.outcome === 'accepted') {
-        installPromptShown.value = true
-        startInstallVisualState()
-        schedulePostInstallAction(
-          isInstalled.value ? POST_INSTALL_EVENT_ACTION_DELAY_MS : POST_INSTALL_ACTION_DELAY_MS,
-        )
-        showLocalToast(t('pwaPage.install.accepted'))
-        return
-      }
-
-      if (result.outcome === 'dismissed') return
-    } finally {
-      installing.value = false
+    if (result.outcome === 'ready') {
+      showLocalToast(t('pwaPage.install.ready'))
+      return
     }
+
+    if (result.outcome === 'dismissed' || result.outcome === 'installed') return
+  } finally {
+    installing.value = false
   }
 
   if (isAndroidPwaInstallDevice.value) {
