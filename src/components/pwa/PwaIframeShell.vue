@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
+import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 
 const PWA_IFRAME_OPEN_MARKER = 'is_pwa'
 
@@ -21,36 +22,12 @@ const props = defineProps({
   },
 })
 
-function normalizeIframeParam(value) {
-  if (value === null || value === undefined) return ''
-
-  return String(value).trim()
-}
-
-function pickFirstIframeParam(...values) {
-  for (const value of values) {
-    const normalizedValue = normalizeIframeParam(value)
-
-    if (normalizedValue) return normalizedValue
-  }
-
-  return ''
-}
-
 function applySearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
     if (!key) return
 
     targetParams.set(key, value)
   })
-}
-
-function applyPwaIdentityParams(targetParams, pwaInfo = {}) {
-  const pwaId = pickFirstIframeParam(pwaInfo.pwa_id, pwaInfo.pwaId, pwaInfo.id)
-  const pwaUrlId = pickFirstIframeParam(pwaInfo.pwa_url_id, pwaInfo.pwaUrlId)
-
-  if (pwaId) targetParams.set('pwa_id', pwaId)
-  if (pwaUrlId) targetParams.set('pwa_url_id', pwaUrlId)
 }
 
 function resolveIframeUrl(sourceUrl, pwaInfo = {}) {

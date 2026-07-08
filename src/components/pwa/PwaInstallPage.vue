@@ -12,6 +12,7 @@ import {
 import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
+import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
 import PwaBottomNav from './PwaBottomNav.vue'
 import PwaDetailsSections from './PwaDetailsSections.vue'
@@ -292,6 +293,8 @@ function resolvePwaRedirectUrl(url) {
         new URLSearchParams(window.location.hash.slice(hashQueryIndex + 1)),
       )
     }
+
+    applyPwaIdentityParams(targetUrl.searchParams, props.pwaInfo)
 
     return targetUrl.toString()
   } catch {
