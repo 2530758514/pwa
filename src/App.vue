@@ -2,10 +2,11 @@
 import { onMounted, onUnmounted, shallowRef } from 'vue'
 import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
+import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
 import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
 
-const { pwaInfo, loading, loadPwaInfo } = usePwaInfo()
+const { pwaInfo, loading, hasPwaInfo, loadPwaInfo } = usePwaInfo()
 const isStandalone = shallowRef(resolveIsPwaStandalone())
 let displayModeQuery = null
 
@@ -27,6 +28,7 @@ onUnmounted(() => {
 
 <template>
   <PwaIframeShell v-if="isStandalone" :pwa-info="pwaInfo" :loading="loading" />
+  <PwaPageSkeleton v-else-if="!hasPwaInfo" />
   <PwaInstallPage
     v-else
     :pwa-info="pwaInfo"

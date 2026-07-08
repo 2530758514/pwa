@@ -146,7 +146,7 @@ export function normalizePwaInfo(response = {}) {
     downloads: String(localizedPayload.store_downloads || payload.downloads || '').trim(),
     comments: Number.isFinite(comments) ? comments : 0,
     rating: String(
-      localizedPayload.store_reviews || payload.rating || payload.store_rating || payload.store_score || '4,9',
+      localizedPayload.store_reviews || payload.rating || payload.store_rating || payload.store_score || '',
     ).trim(),
     updatedDate,
     reviews: normalizeReviews(localizedPayload.reviews || payload.review_list || payload.reviewList),

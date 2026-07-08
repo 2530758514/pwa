@@ -58,8 +58,8 @@ const metricItems = computed(() =>
   props.metrics.map((item) => ({
     ...item,
     label: item.labelKey ? t(item.labelKey) : item.label,
-    value: item.valueKey ? props.app[item.valueKey] || item.value : item.value,
-    subValue: item.subValueKey ? String(props.app[item.subValueKey] ?? 0) : item.subValue,
+    value: item.valueKey ? props.app[item.valueKey] || '' : item.value,
+    subValue: item.subValueKey ? String(props.app[item.subValueKey] ?? '') : item.subValue,
   })),
 )
 </script>
@@ -72,10 +72,16 @@ const metricItems = computed(() =>
         :class="{ 'pwa-hero-section__logo-wrap--installing': installVisualActive }"
       >
         <img
+          v-if="app.logo"
           :src="app.logo"
           :alt="app.name"
           class="pwa-hero-section__logo h-[74px] w-[74px] shrink-0 rounded-[12px] object-contain"
         />
+        <div
+          v-else
+          class="pwa-hero-section__logo pwa-hero-section__logo-placeholder h-[74px] w-[74px] shrink-0 rounded-[12px]"
+          aria-hidden="true"
+        ></div>
       </div>
       <div class="min-w-0 flex-1 pt-1">
         <h1 class="flex items-center gap-1 break-words text-[24px] font-medium leading-[32px] text-[#202124]">
@@ -88,7 +94,10 @@ const metricItems = computed(() =>
         >
           {{ installProgressText }}
         </p>
-        <p class="mt-0.5 break-words text-[16px] font-medium leading-[24px] text-[#00875f]">
+        <p
+          v-if="app.publisher"
+          class="mt-0.5 break-words text-[16px] font-medium leading-[24px] text-[#00875f]"
+        >
           {{ app.publisher }}
         </p>
         <p class="mt-1 flex items-center gap-1 text-[12px] font-normal leading-[16px] text-[#5f6368]">
@@ -211,6 +220,10 @@ const metricItems = computed(() =>
   width: 46px;
   height: 46px;
   border-radius: 8px;
+}
+
+.pwa-hero-section__logo-placeholder {
+  background: #edf1f3;
 }
 
 @keyframes pwaHeroLogoRingSpin {

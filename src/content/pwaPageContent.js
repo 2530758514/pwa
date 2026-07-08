@@ -1,7 +1,3 @@
-﻿import appIcon from '@/assets/pwa/source/app-icon.jpg'
-import carouselOne from '@/assets/pwa/source/carousel-1.jpg'
-import carouselTwo from '@/assets/pwa/source/carousel-2.jpg'
-import carouselThree from '@/assets/pwa/source/carousel-3.jpg'
 import featuredTypeIcon from '@/assets/pwa/source/featured-type.png'
 import googlePlayLogo from '@/assets/pwa/source/google-play-logo.svg'
 import rapidIcon from '@/assets/pwa/source/rapid.png'
@@ -15,7 +11,6 @@ import verifiedIcon from '@/assets/pwa/source/verified.png'
 export const SOURCE_DOWNLOAD_URL = 'https://xxx4.1x777slot.com/appp/777slot777.apk'
 
 export const PWA_SOURCE_ASSETS = {
-  appIcon,
   featuredTypeIcon,
   googlePlayLogo,
   rapidIcon,
@@ -27,44 +22,9 @@ export const PWA_SOURCE_ASSETS = {
   verifiedIcon,
 }
 
-export const DEFAULT_PWA_INFO = {
-  name: '1x777slot',
-  publisher: '1x777slot',
-  logo: appIcon,
-  screenshots: [carouselOne, carouselTwo, carouselThree],
-  rating: '4,9',
-  downloads: '',
-  downloadRewardAmount: 20,
-  comments: 0,
-  introduction:
-    'Welcome to our casino slots app. Enjoy a fast install experience, smooth gameplay, daily rewards, and a wide library of social casino games built for mobile play.',
-  labels: ['Slots', 'Casino', 'Rewards'],
-  updatedDate: '',
-  reviews: [
-    {
-      id: 'default-review-1',
-      name: 'Michael',
-      date: '06-18-2026',
-      text: 'Fast install and smooth gameplay. Rewards are easy to understand and the app opens quickly every time.',
-    },
-    {
-      id: 'default-review-2',
-      name: 'Sophia',
-      date: '06-12-2026',
-      text: 'The interface is clean and the games load without lag. It feels stable on my phone.',
-    },
-    {
-      id: 'default-review-3',
-      name: 'Daniel',
-      date: '06-03-2026',
-      text: 'Good app experience overall. The install process was simple and the daily bonuses are useful.',
-    },
-  ],
-}
-
 export const PWA_METRICS = [
   {
-    value: '4,9',
+    value: '',
     valueKey: 'rating',
     labelKey: 'pwaPage.metrics.reviews',
     icon: 'star',

@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
 import { t } from '@/content/pwaText'
 import {
-  DEFAULT_PWA_INFO,
   PWA_FAMILY_LINKS,
   PWA_FOOTER_LINKS,
   PWA_METRICS,
@@ -43,7 +42,6 @@ const props = defineProps({
 })
 
 const FALLBACK_PWA_LINK = SOURCE_DOWNLOAD_URL
-const DEFAULT_ABOUT_APP_NAME = 'us7money'
 const INSTALL_PROGRESS_DURATION_MS = 12000
 const INSTALL_PROGRESS_STEP_PERCENT = 5
 const INSTALL_PROGRESS_MAX_PERCENT = 100
@@ -51,6 +49,9 @@ const INSTALL_PROGRESS_STEP_MS =
   INSTALL_PROGRESS_DURATION_MS / (INSTALL_PROGRESS_MAX_PERCENT / INSTALL_PROGRESS_STEP_PERCENT)
 const POST_INSTALL_ACTION_DELAY_MS = INSTALL_PROGRESS_DURATION_MS
 const POST_INSTALL_EVENT_ACTION_DELAY_MS = 300
+const ANDROID_POST_INSTALL_AUTO_OPEN_START_MS = INSTALL_PROGRESS_DURATION_MS
+const ANDROID_POST_INSTALL_AUTO_OPEN_INTERVAL_MS = 1000
+const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
 
@@ -84,30 +85,29 @@ let desktopPointerQuery = null
 let mobileViewportQuery = null
 let postInstallActionTimer = null
 let installProgressTimer = null
+let androidPostInstallAutoOpenStartTimer = null
+let androidPostInstallAutoOpenRetryTimer = null
 let postInstallActionStarted = false
 let toastTimer = null
 
 const appInfo = computed(() => {
   const remote = props.pwaInfo || {}
-  const screenshots = remote.pwa_carousel?.length ? remote.pwa_carousel : DEFAULT_PWA_INFO.screenshots
+  const screenshots = Array.isArray(remote.pwa_carousel) ? remote.pwa_carousel : []
   const remoteName = String(remote.name || '').trim()
-  const introduction = String(remote.introduction || DEFAULT_PWA_INFO.introduction || '').trim()
-  const resolvedIntroduction = remoteName
-    ? introduction.replaceAll(DEFAULT_ABOUT_APP_NAME, remoteName)
-    : introduction
+  const introduction = String(remote.introduction || '').trim()
 
   return {
-    name: remoteName || DEFAULT_PWA_INFO.name,
-    publisher: remote.publisher || DEFAULT_PWA_INFO.publisher,
-    logo: remote.logo || DEFAULT_PWA_INFO.logo,
-    rating: remote.rating || DEFAULT_PWA_INFO.rating,
-    downloads: remote.downloads || DEFAULT_PWA_INFO.downloads,
-    downloadRewardAmount: remote.downloadRewardAmount ?? DEFAULT_PWA_INFO.downloadRewardAmount,
-    comments: Number.isFinite(remote.comments) ? remote.comments : DEFAULT_PWA_INFO.comments,
-    introduction: resolvedIntroduction,
-    labels: remote.labels?.length ? remote.labels : DEFAULT_PWA_INFO.labels,
-    updatedDate: remote.updatedDate || DEFAULT_PWA_INFO.updatedDate,
-    reviews: remote.reviews?.length ? remote.reviews : DEFAULT_PWA_INFO.reviews,
+    name: remoteName,
+    publisher: remote.publisher || '',
+    logo: remote.logo || '',
+    rating: remote.rating || '',
+    downloads: remote.downloads || '',
+    downloadRewardAmount: remote.downloadRewardAmount ?? '',
+    comments: Number.isFinite(remote.comments) ? remote.comments : '',
+    introduction,
+    labels: Array.isArray(remote.labels) ? remote.labels : [],
+    updatedDate: remote.updatedDate || '',
+    reviews: Array.isArray(remote.reviews) ? remote.reviews : [],
     screenshots,
   }
 })
@@ -176,6 +176,7 @@ const installButtonDisabled = computed(
     installVisualActive.value ||
     (installPromptShown.value && !isInstalled.value && !postInstallOpenRequested.value),
 )
+const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length > 0)
 
 function appendSearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
@@ -188,7 +189,7 @@ function appendSearchParams(targetParams, sourceParams) {
 async function prepareInstallPrompt(options = {}) {
   const forceRefresh = options.forceRefresh === true
 
-  if (typeof props.loadPwaInfo === 'function') {
+  if (typeof props.loadPwaInfo === 'function' && (forceRefresh || !hasLoadedPwaInfo.value)) {
     await props.loadPwaInfo({ force: forceRefresh })
   }
 
@@ -315,6 +316,7 @@ function resetInstallLoadingState() {
   installing.value = false
   installVisualActive.value = false
   clearInstallProgressTimer()
+  clearAndroidPostInstallAutoOpenTimers()
   installProgressPercent.value = 0
 }
 
@@ -330,6 +332,24 @@ function clearInstallProgressTimer() {
 
   window.clearInterval(installProgressTimer)
   installProgressTimer = null
+}
+
+function clearAndroidPostInstallAutoOpenTimers() {
+  if (typeof window === 'undefined') {
+    androidPostInstallAutoOpenStartTimer = null
+    androidPostInstallAutoOpenRetryTimer = null
+    return
+  }
+
+  if (androidPostInstallAutoOpenStartTimer) {
+    window.clearTimeout(androidPostInstallAutoOpenStartTimer)
+    androidPostInstallAutoOpenStartTimer = null
+  }
+
+  if (androidPostInstallAutoOpenRetryTimer) {
+    window.clearInterval(androidPostInstallAutoOpenRetryTimer)
+    androidPostInstallAutoOpenRetryTimer = null
+  }
 }
 
 function startInstallProgressTimer() {
@@ -362,8 +382,59 @@ function openInstalledOpenPopup() {
   showInstalledOpenPopup.value = true
 }
 
+function resolvePostInstallActionDelay(delay) {
+  if (Number.isFinite(delay)) return delay
+
+  return isAndroidPwaInstallDevice.value
+    ? ANDROID_POST_INSTALL_ACTION_DELAY_MS
+    : POST_INSTALL_ACTION_DELAY_MS
+}
+
+function shouldRunAndroidPostInstallAutoOpen() {
+  if (!isAndroidPwaInstallDevice.value || isStandalone.value || postInstallActionStarted) return false
+  if (typeof document === 'undefined') return false
+
+  return document.visibilityState !== 'hidden'
+}
+
+function tryOpenInstalledPwaAppOnly() {
+  return silentlyTryOpenInstalledPwa({
+    launchMode: isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol',
+  })
+}
+
+function runAndroidPostInstallAutoOpenAttempt() {
+  if (!shouldRunAndroidPostInstallAutoOpen()) {
+    clearAndroidPostInstallAutoOpenTimers()
+    return
+  }
+
+  tryOpenInstalledPwaAppOnly()
+}
+
+function startAndroidPostInstallAutoOpenRetries() {
+  if (androidPostInstallAutoOpenRetryTimer || !shouldRunAndroidPostInstallAutoOpen()) return
+
+  runAndroidPostInstallAutoOpenAttempt()
+  androidPostInstallAutoOpenRetryTimer = window.setInterval(
+    runAndroidPostInstallAutoOpenAttempt,
+    ANDROID_POST_INSTALL_AUTO_OPEN_INTERVAL_MS,
+  )
+}
+
+function scheduleAndroidPostInstallAutoOpenRetries() {
+  if (typeof window === 'undefined' || !isAndroidPwaInstallDevice.value || isStandalone.value) return
+
+  clearAndroidPostInstallAutoOpenTimers()
+  androidPostInstallAutoOpenStartTimer = window.setTimeout(() => {
+    androidPostInstallAutoOpenStartTimer = null
+    startAndroidPostInstallAutoOpenRetries()
+  }, ANDROID_POST_INSTALL_AUTO_OPEN_START_MS)
+}
+
 function runPostInstallAction() {
   clearPostInstallActionTimer()
+  clearAndroidPostInstallAutoOpenTimers()
 
   if (postInstallActionStarted || isStandalone.value) return
 
@@ -374,14 +445,14 @@ function runPostInstallAction() {
   openInstalledOpenPopup()
 }
 
-function schedulePostInstallAction(delay = POST_INSTALL_ACTION_DELAY_MS) {
+function schedulePostInstallAction(delay) {
   if (typeof window === 'undefined' || isStandalone.value) return
 
   clearPostInstallActionTimer()
   postInstallActionTimer = window.setTimeout(() => {
     postInstallActionTimer = null
     runPostInstallAction()
-  }, delay)
+  }, resolvePostInstallActionDelay(delay))
 }
 
 function handleInstalledOpen() {
@@ -439,11 +510,13 @@ function openCurrentPageInExternalBrowser() {
 }
 
 function silentlyTryOpenInstalledPwa(options = {}) {
+  const launchMode =
+    options.launchMode || (isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol')
   const result = tryOpenInstalledPwa({
     ...options,
     fallback: false,
-    launchMode: isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol',
-    target: '_self',
+    launchMode,
+    target: options.target || '_self',
   })
 
   return result.outcome === 'attempted'
@@ -515,9 +588,8 @@ async function runNativeInstallPrompt() {
     if (result.outcome === 'accepted') {
       installPromptShown.value = true
       startInstallVisualState()
-      schedulePostInstallAction(
-        isInstalled.value ? POST_INSTALL_EVENT_ACTION_DELAY_MS : POST_INSTALL_ACTION_DELAY_MS,
-      )
+      scheduleAndroidPostInstallAutoOpenRetries()
+      schedulePostInstallAction()
       showLocalToast(t('pwaPage.install.accepted'))
       return
     }
@@ -587,12 +659,14 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearPostInstallActionTimer()
   clearInstallProgressTimer()
+  clearAndroidPostInstallAutoOpenTimers()
   teardownQrCode()
   if (toastTimer) window.clearTimeout(toastTimer)
 })
 
 watch(isInstalled, (installed) => {
   if (!installed || !installVisualActive.value || postInstallActionStarted) return
+  if (isAndroidPwaInstallDevice.value) return
 
   clearPostInstallActionTimer()
   schedulePostInstallAction(POST_INSTALL_EVENT_ACTION_DELAY_MS)
