@@ -94,7 +94,9 @@ let toastTimer = null
 const appInfo = computed(() => {
   const remote = props.pwaInfo || {}
   const screenshots = Array.isArray(remote.pwa_carousel) ? remote.pwa_carousel : []
-  const remoteName = String(remote.name || '').trim()
+  const remoteName = String(
+    remote.pwaInstallName || remote.installName || remote.pwa_name || remote.pwaName || remote.name || '',
+  ).trim()
   const introduction = String(remote.introduction || '').trim()
 
   return {

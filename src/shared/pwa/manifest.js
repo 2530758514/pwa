@@ -661,6 +661,10 @@ export function applyIosPwaMetadata(metadata = {}) {
   const icon = normalizeManifestUrl(metadata.icon || metadata.logo || metadata.pwa_logo || metadata.pwaLogo)
 
   if (name) {
+    if (typeof document !== 'undefined' && document.title !== name) {
+      document.title = name
+    }
+
     const appleTitle = ensureHeadMeta('meta[name="apple-mobile-web-app-title"]', () => {
       const element = document.createElement('meta')
       element.setAttribute('name', 'apple-mobile-web-app-title')

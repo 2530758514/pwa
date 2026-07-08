@@ -122,7 +122,9 @@ export function normalizePwaInfo(response = {}) {
   const payload = normalizePayload(response)
   const languagePayload = resolveLanguagePayload(payload.language)
   const localizedPayload = { ...payload, ...languagePayload }
-  const name = String(localizedPayload.store_app_name || localizedPayload.name || payload.pwa_name || '').trim()
+  const pwaName = String(payload.pwa_name || payload.pwaName || '').trim()
+  const name = String(localizedPayload.store_app_name || localizedPayload.name || pwaName || '').trim()
+  const installName = pwaName || name
   const publisher =
     typeof localizedPayload.store_developer === 'string'
       ? localizedPayload.store_developer.trim()
@@ -157,7 +159,11 @@ export function normalizePwaInfo(response = {}) {
     pwaId,
     pwa_url_id: pwaUrlId,
     pwaUrlId: pwaUrlId,
+    pwa_name: pwaName,
+    pwaName,
     name,
+    installName,
+    pwaInstallName: installName,
     publisher,
     logo,
     pwa_logo: logo,

@@ -1,11 +1,11 @@
 ﻿<script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
 import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 
-const PWA_IFRAME_OPEN_MARKER = 'is_pwa'
+const FALLBACK_IFRAME_HEIGHT = '100vh'
 
 defineOptions({
   name: 'PwaIframeShell',
@@ -21,6 +21,38 @@ const props = defineProps({
     default: false,
   },
 })
+
+const iframeViewportHeight = shallowRef(FALLBACK_IFRAME_HEIGHT)
+let pendingViewportSync = 0
+
+const iframeShellStyle = computed(() => ({
+  '--pwa-iframe-height': iframeViewportHeight.value,
+}))
+
+function resolveIframeViewportHeight() {
+  if (typeof window === 'undefined') return FALLBACK_IFRAME_HEIGHT
+
+  const height =
+    window.visualViewport?.height ||
+    window.innerHeight ||
+    document.documentElement?.clientHeight ||
+    0
+
+  return Number.isFinite(height) && height > 0 ? `${height}px` : FALLBACK_IFRAME_HEIGHT
+}
+
+function syncIframeViewportHeight() {
+  if (typeof window === 'undefined') return
+
+  if (pendingViewportSync) {
+    window.cancelAnimationFrame(pendingViewportSync)
+  }
+
+  pendingViewportSync = window.requestAnimationFrame(() => {
+    pendingViewportSync = 0
+    iframeViewportHeight.value = resolveIframeViewportHeight()
+  })
+}
 
 function applySearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
@@ -46,7 +78,6 @@ function resolveIframeUrl(sourceUrl, pwaInfo = {}) {
     }
 
     applyPwaIdentityParams(targetUrl.searchParams, pwaInfo)
-    targetUrl.searchParams.set(PWA_IFRAME_OPEN_MARKER, '1')
 
     return targetUrl.toString()
   } catch {
@@ -70,10 +101,41 @@ function reload() {
     window.location.reload()
   }
 }
+
+onMounted(() => {
+  syncIframeViewportHeight()
+
+  const viewport = window.visualViewport
+  viewport?.addEventListener?.('resize', syncIframeViewportHeight)
+  viewport?.addEventListener?.('scroll', syncIframeViewportHeight)
+  window.addEventListener('resize', syncIframeViewportHeight)
+  window.addEventListener('orientationchange', syncIframeViewportHeight)
+  window.addEventListener('pageshow', syncIframeViewportHeight)
+  window.addEventListener('focusin', syncIframeViewportHeight)
+  window.addEventListener('focusout', syncIframeViewportHeight)
+  document.addEventListener('visibilitychange', syncIframeViewportHeight)
+})
+
+onUnmounted(() => {
+  const viewport = window.visualViewport
+  viewport?.removeEventListener?.('resize', syncIframeViewportHeight)
+  viewport?.removeEventListener?.('scroll', syncIframeViewportHeight)
+  window.removeEventListener('resize', syncIframeViewportHeight)
+  window.removeEventListener('orientationchange', syncIframeViewportHeight)
+  window.removeEventListener('pageshow', syncIframeViewportHeight)
+  window.removeEventListener('focusin', syncIframeViewportHeight)
+  window.removeEventListener('focusout', syncIframeViewportHeight)
+  document.removeEventListener('visibilitychange', syncIframeViewportHeight)
+
+  if (pendingViewportSync) {
+    window.cancelAnimationFrame(pendingViewportSync)
+    pendingViewportSync = 0
+  }
+})
 </script>
 
 <template>
-  <main class="pwa-iframe-shell">
+  <main class="pwa-iframe-shell" :style="iframeShellStyle">
     <div v-if="loading && !iframeSrc" class="pwa-iframe-shell__state">
       <PwaLoadingSpinner :size="24" />
       <span>{{ t('pwaPage.iframe.loading') }}</span>
@@ -102,7 +164,9 @@ function reload() {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
+  height: var(--pwa-iframe-height, 100dvh);
   overflow: hidden;
+  overscroll-behavior: none;
   background: #000;
 }
 

@@ -56,9 +56,23 @@ function runPwaManifestRequestOnce(requestMap, requestKey, requestFactory) {
   return requestMap.get(requestKey)
 }
 
+function resolvePwaInstallName(pwaInfo = {}) {
+  return (
+    pwaInfo.pwaInstallName ||
+    pwaInfo.installName ||
+    pwaInfo.pwa_name ||
+    pwaInfo.pwaName ||
+    pwaInfo.name ||
+    ''
+  )
+}
+
 function resolvePwaManifestOverrides(pwaInfo = {}) {
+  const name = resolvePwaInstallName(pwaInfo)
+
   return {
-    name: pwaInfo.name || pwaInfo.pwa_name || pwaInfo.pwaName || '',
+    name,
+    short_name: name,
     description:
       pwaInfo.description ||
       pwaInfo.introduction ||
@@ -71,7 +85,7 @@ function resolvePwaManifestOverrides(pwaInfo = {}) {
 
 function applyPwaInstallMetadata(pwaInfo = {}) {
   const metadata = {
-    name: pwaInfo.name || pwaInfo.pwa_name || pwaInfo.pwaName || '',
+    name: resolvePwaInstallName(pwaInfo),
     icon: pwaInfo.icon || pwaInfo.logo || pwaInfo.pwa_logo || pwaInfo.pwaLogo || '',
   }
 
