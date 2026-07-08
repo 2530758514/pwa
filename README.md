@@ -24,3 +24,15 @@ Remote display fields such as `name`, `short_name`, `description`, `icons`, `scr
 `/manifest.webmanifest` is only the first-load fallback. The service worker keeps `/pwa-dynamic-manifest.webmanifest` installable even before the remote config is ready by falling back to the static manifest instead of returning 404.
 
 If `config_url` is cross-origin, the manifest host must allow CORS from the PWA shell domain. The default link/fetch mode is anonymous; set `VITE_PWA_MANIFEST_CROSSORIGIN=use-credentials` only when that manifest host requires cookies and sends credentialed CORS headers.
+
+## Production deploy checklist
+
+PWA installability is checked against the files that the browser receives from the public origin, not only the latest built assets. After deploying, verify these root-level files:
+
+- `/pwa` must return the current `index.html` and reference the latest built JS/CSS.
+- `/sw.js` must be the standalone shell service worker and contain `pwa-shell-runtime-v2`. Serve it with `Content-Type: application/javascript` and `Cache-Control: no-cache` or `no-store`; purge CDN cache after each deploy.
+- `/manifest.webmanifest` and `/pwa-dynamic-manifest.webmanifest` must return 200 JSON with `Content-Type: application/manifest+json` or `application/json`.
+- `/pwa-icons/icon-192.png` and `/pwa-icons/icon-512.png` must return 200 images.
+- The server must fallback `/pwa` and other app routes to `index.html`, but must not fallback `*.webmanifest`, `/sw.js`, or icon files to HTML.
+
+If Android Chrome has already seen an old service worker, clear site data or unregister the old service worker before retesting. A stale `/sw.js` can keep returning an old dynamic-manifest 404 even when the page HTML has already updated.

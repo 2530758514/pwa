@@ -5,6 +5,17 @@ import { initializePwaInstallPromptListeners } from './composables/pwa/usePwaIns
 import { initializePwaDisplayModeClasses } from './shared/pwa/displayMode'
 import { applyStoredPwaManifestUrl } from './shared/pwa/manifest'
 
+const shouldEnableVConsole =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_VCONSOLE === 'true'
+
+if (shouldEnableVConsole) {
+  import('vconsole')
+    .then(({ default: VConsole }) => {
+      new VConsole()
+    })
+    .catch(() => {})
+}
+
 initializePwaInstallPromptListeners()
 initializePwaDisplayModeClasses()
 applyStoredPwaManifestUrl()
