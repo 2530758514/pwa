@@ -14,6 +14,20 @@ const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
 const MANIFEST_INFO_SCHEMA_VERSION = 5
 const DEFAULT_ICON_192 = '/pwa-icons/icon-192.png'
 const DEFAULT_ICON_512 = '/pwa-icons/icon-512.png'
+const DEFAULT_INSTALL_ICONS = [
+  {
+    src: DEFAULT_ICON_192,
+    sizes: '192x192',
+    type: 'image/png',
+    purpose: 'any maskable',
+  },
+  {
+    src: DEFAULT_ICON_512,
+    sizes: '512x512',
+    type: 'image/png',
+    purpose: 'any maskable',
+  },
+]
 const PWA_APP_ID_PATH = '/'
 const PWA_APP_SCOPE_PATH = '/'
 const PWA_APP_START_PATH = '/'
@@ -258,36 +272,27 @@ function resolveManifestName(manifest) {
   return 'SlotFront H5'
 }
 
-function hasSizedIcon(icons, size) {
-  return icons.some((icon) => {
-    if (!icon?.src) return false
+function isSameManifestPath(value, targetPath) {
+  const source = String(value || '').trim()
 
-    return String(icon.sizes || '')
-      .split(/\s+/)
-      .includes(`${size}x${size}`)
-  })
+  if (!source) return false
+  if (source === targetPath) return true
+
+  try {
+    return new URL(source, getCurrentOrigin() || 'https://localhost/').pathname === targetPath
+  } catch {
+    return false
+  }
 }
 
 function ensureInstallIcons(icons = []) {
   const nextIcons = Array.isArray(icons) ? icons.filter((icon) => icon?.src) : []
 
-  if (!hasSizedIcon(nextIcons, 192)) {
-    nextIcons.push({
-      src: DEFAULT_ICON_192,
-      sizes: '192x192',
-      type: 'image/png',
-      purpose: 'any maskable',
-    })
-  }
-
-  if (!hasSizedIcon(nextIcons, 512)) {
-    nextIcons.push({
-      src: DEFAULT_ICON_512,
-      sizes: '512x512',
-      type: 'image/png',
-      purpose: 'any maskable',
-    })
-  }
+  DEFAULT_INSTALL_ICONS.forEach((defaultIcon) => {
+    if (!nextIcons.some((icon) => isSameManifestPath(icon.src, defaultIcon.src))) {
+      nextIcons.push({ ...defaultIcon })
+    }
+  })
 
   return nextIcons
 }
@@ -392,9 +397,17 @@ function normalizeInstallableManifest(manifest) {
 function normalizeManifestPayload(manifest, manifestUrl, overrides = {}) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null
 
+  const normalizedOverrides = normalizeManifestOverrides(overrides)
   const nextManifest = {
     ...manifest,
-    ...normalizeManifestOverrides(overrides),
+    ...normalizedOverrides,
+  }
+
+  if (Array.isArray(normalizedOverrides.icons)) {
+    nextManifest.icons = [
+      ...normalizedOverrides.icons,
+      ...(Array.isArray(manifest.icons) ? manifest.icons : []),
+    ]
   }
 
   if (Array.isArray(nextManifest.icons)) {
@@ -743,8 +756,7 @@ export async function createAndStorePwaManifest(overrides = {}) {
 async function storePwaManifest(manifest, configUrl) {
   const fetchedAt = Date.now()
   const manifestUrl = normalizeManifestUrl(configUrl)
-  const dynamicManifestHref = await cacheDynamicManifest(manifest, fetchedAt)
-  const manifestHref = dynamicManifestHref || manifestUrl
+  const manifestHref = manifestUrl || (await cacheDynamicManifest(manifest, fetchedAt))
 
   const manifestInfo = {
     schemaVersion: MANIFEST_INFO_SCHEMA_VERSION,
@@ -765,6 +777,7 @@ async function storePwaManifest(manifest, configUrl) {
     applyPwaManifestInfo(manifestInfo)
   } else {
     storage.remove(STORAGE_KEYS.pwaManifestInfo)
+    applyPwaManifestUrl(DEFAULT_MANIFEST_HREF)
   }
 
   return manifestInfo
@@ -790,9 +803,8 @@ async function cacheDynamicManifest(manifest, version = Date.now()) {
 
     const cache = await caches.open(MANIFEST_CACHE_NAME)
     await cache.put(DYNAMIC_MANIFEST_HREF, response)
-    void waitForActiveServiceWorker()
 
-    return createDynamicManifestHref(version)
+    return (await waitForActiveServiceWorker()) ? createDynamicManifestHref(version) : ''
   } catch {
     return ''
   }
