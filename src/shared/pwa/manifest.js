@@ -542,6 +542,17 @@ async function waitForActiveServiceWorker() {
   return waitForServiceWorkerController()
 }
 
+async function clearDynamicManifestCache() {
+  if (typeof caches === 'undefined') return false
+
+  try {
+    const cache = await caches.open(MANIFEST_CACHE_NAME)
+    return await cache.delete(DYNAMIC_MANIFEST_HREF)
+  } catch {
+    return false
+  }
+}
+
 export function getStoredPwaManifestInfo() {
   const info = storage.get(STORAGE_KEYS.pwaManifestInfo, null)
 
@@ -597,9 +608,18 @@ export function applyPwaManifestInfo(info = getStoredPwaManifestInfo()) {
   return applyManifestLinkHref(link, manifestHref)
 }
 
-export function clearStoredPwaManifest() {
+export function clearStoredPwaManifest(options = {}) {
   storage.remove(STORAGE_KEYS.pwaManifestUrl)
   storage.remove(STORAGE_KEYS.pwaManifestInfo)
+
+  if (options.clearCache !== false) {
+    void clearDynamicManifestCache()
+  }
+}
+
+export async function clearStoredPwaManifestData() {
+  clearStoredPwaManifest({ clearCache: false })
+  await clearDynamicManifestCache()
 }
 
 export function applyLocalPwaManifest(options = {}) {
@@ -649,8 +669,22 @@ export function applyIosPwaMetadata(metadata = {}) {
       element.setAttribute('rel', 'apple-touch-icon')
       return element
     })
+    const favicon = ensureHeadMeta('link[rel="icon"]', () => {
+      const element = document.createElement('link')
+      element.setAttribute('rel', 'icon')
+      return element
+    })
+    const iconType = inferImageMimeType(icon)
 
     appleIcon?.setAttribute('href', icon)
+    favicon?.setAttribute('href', icon)
+    favicon?.setAttribute('sizes', 'any')
+
+    if (iconType) {
+      favicon?.setAttribute('type', iconType)
+    } else {
+      favicon?.removeAttribute('type')
+    }
   }
 }
 
@@ -709,7 +743,8 @@ export async function createAndStorePwaManifest(overrides = {}) {
 async function storePwaManifest(manifest, configUrl) {
   const fetchedAt = Date.now()
   const manifestUrl = normalizeManifestUrl(configUrl)
-  const manifestHref = manifestUrl || (await cacheDynamicManifest(manifest, fetchedAt))
+  const dynamicManifestHref = await cacheDynamicManifest(manifest, fetchedAt)
+  const manifestHref = dynamicManifestHref || manifestUrl
 
   const manifestInfo = {
     schemaVersion: MANIFEST_INFO_SCHEMA_VERSION,

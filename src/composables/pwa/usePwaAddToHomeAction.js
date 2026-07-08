@@ -47,7 +47,13 @@ export function usePwaAddToHomeAction() {
       preparingInstall.value = true
 
       if (options.forceRefresh) {
-        return await pwaService.refreshPwaManifest({}, { persist: true })
+        return await pwaService.refreshPwaManifest(
+          {},
+          {
+            forceRefresh: true,
+            persist: true,
+          },
+        )
       }
 
       return await pwaService.ensureCachedPwaManifest({})

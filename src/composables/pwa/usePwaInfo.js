@@ -31,7 +31,13 @@ export function usePwaInfo() {
     error.value = null
     capturePwaLandingAttribution()
 
-    const refreshRequest = pwaService.refreshPwaManifest({}, { persist: true })
+    const refreshRequest = pwaService.refreshPwaManifest(
+      {},
+      {
+        forceRefresh: options.force === true,
+        persist: true,
+      },
+    )
 
     requestPromise = withTimeout(refreshRequest)
       .then((result) => {
