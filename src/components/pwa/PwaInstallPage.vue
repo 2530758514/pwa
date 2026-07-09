@@ -505,12 +505,39 @@ function buildChromeIntentUrl(url) {
   }
 }
 
+function clickExternalBrowserLink(url, target = '_blank') {
+  if (typeof document === 'undefined') return
+
+  const link = document.createElement('a')
+  link.href = url
+  link.target = target
+  link.rel = 'noopener noreferrer'
+  link.style.display = 'none'
+
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+function autoOpenCurrentPageInExternalBrowser() {
+  if (typeof window === 'undefined') return
+
+  const currentUrl = openBrowserGuideUrl.value || window.location.href
+
+  if (isAndroidPwaInstallDevice.value) {
+    clickExternalBrowserLink(buildChromeIntentUrl(currentUrl), '_self')
+    return
+  }
+
+  clickExternalBrowserLink(currentUrl)
+}
+
 function maybeAutoOpenExternalBrowserFromGuide() {
   if (!shouldLockOpenBrowserGuide.value || openBrowserGuideAutoOpenAttempted) return
   if (typeof window === 'undefined') return
 
   openBrowserGuideAutoOpenAttempted = true
-  window.setTimeout(openCurrentPageInExternalBrowser, 0)
+  autoOpenCurrentPageInExternalBrowser()
 }
 
 function openExternalBrowserGuide(options = {}) {
