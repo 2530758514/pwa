@@ -1,8 +1,14 @@
 import { computed, onMounted, onUnmounted, readonly, shallowRef } from 'vue'
 import { STORAGE_KEYS } from '@/shared/storage/keys'
 import { storage } from '@/shared/storage/storage'
+import {
+  getCurrentPwaManifestHref,
+  isDefaultPwaManifestHref,
+  PWA_MANIFEST_HREF_CHANGE_EVENT,
+} from '@/shared/pwa/manifest'
 
 const deferredPrompt = shallowRef(null)
+const deferredPromptManifestHref = shallowRef('')
 const isInstalled = shallowRef(false)
 const isStandalone = shallowRef(false)
 const hasInstallPromptEvent = shallowRef(false)
@@ -44,7 +50,34 @@ function clearStoredInstallState() {
 function markInstalled(source) {
   isInstalled.value = true
   deferredPrompt.value = null
+  deferredPromptManifestHref.value = ''
   writeStoredInstallState(source)
+}
+
+function clearDeferredPrompt() {
+  deferredPrompt.value = null
+  deferredPromptManifestHref.value = ''
+}
+
+function resolveIsDeferredPromptStale(options = {}) {
+  if (!deferredPrompt.value) return false
+
+  const capturedManifestHref = deferredPromptManifestHref.value
+  const currentManifestHref = getCurrentPwaManifestHref()
+
+  if (options.rejectDefaultManifest && isDefaultPwaManifestHref(capturedManifestHref)) {
+    return true
+  }
+
+  return Boolean(capturedManifestHref && currentManifestHref && capturedManifestHref !== currentManifestHref)
+}
+
+function discardStaleInstallPrompt(options = {}) {
+  if (!resolveIsDeferredPromptStale(options)) return false
+
+  clearDeferredPrompt()
+
+  return true
 }
 
 function resolveStandaloneMode() {
@@ -81,6 +114,7 @@ function handleBeforeInstallPrompt(event) {
   isInstalled.value = false
   hasInstallPromptEvent.value = true
   deferredPrompt.value = event
+  deferredPromptManifestHref.value = getCurrentPwaManifestHref()
 }
 
 function handleAppInstalled() {
@@ -120,6 +154,10 @@ async function refreshInstalledState() {
     if (isStandalone.value || isInstalled.value) return isInstalled.value
 
     if (deferredPrompt.value) {
+      discardStaleInstallPrompt()
+    }
+
+    if (deferredPrompt.value) {
       clearStoredInstallState()
       return false
     }
@@ -147,6 +185,10 @@ function handlePageShow() {
   void refreshInstalledState()
 }
 
+function handleManifestHrefChange() {
+  discardStaleInstallPrompt()
+}
+
 function registerListeners() {
   if (listenersRegistered || typeof window === 'undefined') return
 
@@ -156,6 +198,7 @@ function registerListeners() {
   window.addEventListener('pageshow', handlePageShow)
   window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   window.addEventListener('appinstalled', handleAppInstalled)
+  window.addEventListener(PWA_MANIFEST_HREF_CHANGE_EVENT, handleManifestHrefChange)
   listenersRegistered = true
 }
 
@@ -173,6 +216,7 @@ function unregisterListeners() {
   window.removeEventListener('pageshow', handlePageShow)
   window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   window.removeEventListener('appinstalled', handleAppInstalled)
+  window.removeEventListener(PWA_MANIFEST_HREF_CHANGE_EVENT, handleManifestHrefChange)
   listenersRegistered = false
   displayModeQuery = null
 }
@@ -192,6 +236,7 @@ export function usePwaInstallPrompt() {
   })
 
   async function promptInstall() {
+    discardStaleInstallPrompt()
     await refreshInstalledState()
 
     if (!deferredPrompt.value || isInstalled.value || isStandalone.value) {
@@ -206,6 +251,7 @@ export function usePwaInstallPrompt() {
       const outcome = choice?.outcome || 'unknown'
 
       deferredPrompt.value = null
+      deferredPromptManifestHref.value = ''
 
       if (outcome === 'accepted') {
         markInstalled('prompt-accepted')
@@ -221,6 +267,7 @@ export function usePwaInstallPrompt() {
   }
 
   async function waitForInstallPrompt(options = {}) {
+    discardStaleInstallPrompt(options)
     await refreshInstalledState()
 
     if (canPromptInstall.value || typeof window === 'undefined') {
@@ -237,6 +284,7 @@ export function usePwaInstallPrompt() {
 
     while (Date.now() < deadline) {
       await sleep(pollMs)
+      discardStaleInstallPrompt(options)
 
       if (canPromptInstall.value) return true
     }
@@ -261,6 +309,7 @@ export function usePwaInstallPrompt() {
     isIosInstallGuide,
     isStandalone: readonly(isStandalone),
     promptInstall,
+    discardStaleInstallPrompt,
     refreshInstalledState,
     waitForInstallPrompt,
   }

@@ -3,6 +3,7 @@ import { storage } from '@/shared/storage/storage'
 
 export const DEFAULT_MANIFEST_HREF = '/manifest.webmanifest'
 export const DYNAMIC_MANIFEST_HREF = '/pwa-dynamic-manifest.webmanifest'
+export const PWA_MANIFEST_HREF_CHANGE_EVENT = 'pwa:manifesthrefchange'
 export const PWA_MANIFEST_SOURCE = String(import.meta.env.VITE_PWA_MANIFEST_SOURCE || 'dynamic')
   .trim()
   .toLowerCase()
@@ -12,6 +13,7 @@ const PWA_MANIFEST_CROSSORIGIN = String(import.meta.env.VITE_PWA_MANIFEST_CROSSO
 
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
 const MANIFEST_INFO_SCHEMA_VERSION = 5
+const MANIFEST_VERSION_PARAM = '_pwa_manifest_v'
 const DEFAULT_ICON_192 = '/pwa-icons/icon-192.png'
 const DEFAULT_ICON_512 = '/pwa-icons/icon-512.png'
 const DEFAULT_INSTALL_ICONS = [
@@ -189,6 +191,14 @@ function getCurrentOrigin() {
   return ''
 }
 
+function createManifestVersionValue(version = Date.now()) {
+  const normalizedVersion = Number(version)
+
+  return Number.isFinite(normalizedVersion) && normalizedVersion > 0
+    ? String(Math.floor(normalizedVersion))
+    : String(Date.now())
+}
+
 function getDefaultManifestUrl() {
   const origin = getCurrentOrigin()
 
@@ -198,6 +208,25 @@ function getDefaultManifestUrl() {
     return new URL(DEFAULT_MANIFEST_HREF, origin).href
   } catch {
     return DEFAULT_MANIFEST_HREF
+  }
+}
+
+function createVersionedManifestHref(manifestHref, version = Date.now()) {
+  const normalizedHref = normalizeManifestUrl(manifestHref)
+
+  if (!normalizedHref) return ''
+
+  try {
+    const url = new URL(normalizedHref, getCurrentOrigin() || 'https://localhost/')
+    url.searchParams.set(MANIFEST_VERSION_PARAM, createManifestVersionValue(version))
+
+    return url.href
+  } catch {
+    const separator = normalizedHref.includes('?') ? '&' : '?'
+
+    return `${normalizedHref}${separator}${MANIFEST_VERSION_PARAM}=${encodeURIComponent(
+      createManifestVersionValue(version),
+    )}`
   }
 }
 
@@ -287,6 +316,13 @@ function isSameManifestPath(value, targetPath) {
 
 function ensureInstallIcons(icons = []) {
   const nextIcons = Array.isArray(icons) ? icons.filter((icon) => icon?.src) : []
+  const hasRemoteInstallIcon = nextIcons.some((icon) => {
+    return !DEFAULT_INSTALL_ICONS.some((defaultIcon) => isSameManifestPath(icon.src, defaultIcon.src))
+  })
+
+  if (hasRemoteInstallIcon) {
+    return nextIcons
+  }
 
   DEFAULT_INSTALL_ICONS.forEach((defaultIcon) => {
     if (!nextIcons.some((icon) => isSameManifestPath(icon.src, defaultIcon.src))) {
@@ -404,10 +440,7 @@ function normalizeManifestPayload(manifest, manifestUrl, overrides = {}) {
   }
 
   if (Array.isArray(normalizedOverrides.icons)) {
-    nextManifest.icons = [
-      ...normalizedOverrides.icons,
-      ...(Array.isArray(manifest.icons) ? manifest.icons : []),
-    ]
+    nextManifest.icons = normalizedOverrides.icons
   }
 
   if (Array.isArray(nextManifest.icons)) {
@@ -466,7 +499,9 @@ function applyManifestLinkHref(link, manifestHref) {
     return ''
   }
 
-  if (link.getAttribute('href') !== manifestHref) {
+  const currentHref = link.getAttribute('href') || ''
+
+  if (currentHref !== manifestHref) {
     link.setAttribute('href', manifestHref)
   }
 
@@ -476,6 +511,16 @@ function applyManifestLinkHref(link, manifestHref) {
     link.setAttribute('crossorigin', crossOrigin)
   } else {
     link.removeAttribute('crossorigin')
+  }
+
+  if (currentHref !== manifestHref && typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(PWA_MANIFEST_HREF_CHANGE_EVENT, {
+        detail: {
+          manifestHref,
+        },
+      }),
+    )
   }
 
   return manifestHref
@@ -586,6 +631,26 @@ export function getStoredPwaManifestUrl() {
   return normalizeManifestUrl(storage.get(STORAGE_KEYS.pwaManifestUrl, ''))
 }
 
+export function getCurrentPwaManifestHref() {
+  const link = resolveManifestLink()
+
+  if (!link) return ''
+
+  return normalizeManifestUrl(link.getAttribute('href') || '')
+}
+
+export function isDefaultPwaManifestHref(manifestHref) {
+  const normalizedHref = normalizeManifestUrl(manifestHref)
+
+  if (!normalizedHref) return false
+
+  try {
+    return new URL(normalizedHref, getCurrentOrigin() || 'https://localhost/').pathname === DEFAULT_MANIFEST_HREF
+  } catch {
+    return normalizedHref === DEFAULT_MANIFEST_HREF
+  }
+}
+
 export function applyPwaManifestUrl(configUrl, options = {}) {
   const manifestUrl = normalizeManifestUrl(configUrl)
   const link = resolveManifestLink()
@@ -615,7 +680,9 @@ export function applyPwaManifestInfo(info = getStoredPwaManifestInfo()) {
 
   if (!manifestHref) return ''
   if (isDynamicManifestHref(manifestHref) && !canServeDynamicManifest()) {
-    return applyManifestLinkHref(link, DEFAULT_MANIFEST_HREF)
+    const fallbackManifestHref = createVersionedManifestHref(info.configUrl, info.fetchedAt)
+
+    return applyManifestLinkHref(link, fallbackManifestHref || DEFAULT_MANIFEST_HREF)
   }
 
   return applyManifestLinkHref(link, manifestHref)
@@ -730,21 +797,20 @@ export async function fetchAndStorePwaManifest(configUrl, options = {}) {
 
   if (!manifestUrl) return null
 
-  const response = await fetch(manifestUrl, {
-    credentials: PWA_MANIFEST_CROSSORIGIN === 'use-credentials' ? 'include' : 'same-origin',
-  })
+  const fetchedAt = Date.now()
+  const manifestRequest = await fetchPwaManifestResponse(manifestUrl, fetchedAt)
 
-  if (!response.ok) {
-    throw new Error(`PWA manifest request failed: ${response.status}`)
-  }
-
-  const manifest = normalizeManifestPayload(await response.json(), manifestUrl, options.manifestOverrides)
+  const manifest = normalizeManifestPayload(
+    await manifestRequest.response.json(),
+    manifestRequest.manifestHref,
+    options.manifestOverrides,
+  )
 
   if (!manifest) {
     throw new Error('PWA manifest payload is invalid')
   }
 
-  return storePwaManifest(manifest, manifestUrl)
+  return storePwaManifest(manifest, manifestUrl, { fetchedAt })
 }
 
 export async function createAndStorePwaManifest(overrides = {}) {
@@ -757,10 +823,42 @@ export async function createAndStorePwaManifest(overrides = {}) {
   return storePwaManifest(manifest, '')
 }
 
-async function storePwaManifest(manifest, configUrl) {
-  const fetchedAt = Date.now()
+async function fetchPwaManifestResponse(manifestUrl, version = Date.now()) {
+  const manifestHrefs = [
+    createVersionedManifestHref(manifestUrl, version),
+    normalizeManifestUrl(manifestUrl),
+  ].filter((href, index, list) => href && list.indexOf(href) === index)
+  let lastError = null
+
+  for (const manifestHref of manifestHrefs) {
+    try {
+      const response = await fetch(manifestHref, {
+        cache: 'no-store',
+        credentials: PWA_MANIFEST_CROSSORIGIN === 'use-credentials' ? 'include' : 'same-origin',
+      })
+
+      if (response.ok) {
+        return {
+          manifestHref,
+          response,
+        }
+      }
+
+      lastError = new Error(`PWA manifest request failed: ${response.status}`)
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError || new Error('PWA manifest request failed')
+}
+
+async function storePwaManifest(manifest, configUrl, options = {}) {
+  const fetchedAt = Number.isFinite(options.fetchedAt) && options.fetchedAt > 0 ? options.fetchedAt : Date.now()
   const manifestUrl = normalizeManifestUrl(configUrl)
-  const manifestHref = manifestUrl || (await cacheDynamicManifest(manifest, fetchedAt))
+  const dynamicManifestHref = await cacheDynamicManifest(manifest, fetchedAt)
+  const remoteManifestHref = createVersionedManifestHref(manifestUrl, fetchedAt) || manifestUrl
+  const manifestHref = dynamicManifestHref || remoteManifestHref
 
   const manifestInfo = {
     schemaVersion: MANIFEST_INFO_SCHEMA_VERSION,

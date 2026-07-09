@@ -30,6 +30,7 @@ export function usePwaAddToHomeAction() {
     hasInstallPromptEvent,
     isInstalled,
     isStandalone,
+    discardStaleInstallPrompt,
     promptInstall,
     refreshInstalledState,
     waitForInstallPrompt,
@@ -76,6 +77,7 @@ export function usePwaAddToHomeAction() {
 
   async function requestAddToHome(options = {}) {
     await refreshInstalledState()
+    discardStaleInstallPrompt({ rejectDefaultManifest: true })
 
     if (isInstalled.value || isStandalone.value) {
       return { outcome: 'installed' }
@@ -90,25 +92,24 @@ export function usePwaAddToHomeAction() {
       }
     }
 
-    if (canPromptInstall.value) {
-      return await promptNativeInstall()
+    let manifestResult = null
+
+    if (!canPromptInstall.value) {
+      manifestResult = await prepareInstallManifest({
+        forceRefresh: options.forceRefresh !== false,
+      })
+      discardStaleInstallPrompt({ rejectDefaultManifest: true })
+      await refreshInstalledState()
     }
 
-    const manifestResult = await prepareInstallManifest({
-      forceRefresh: options.forceRefresh !== false,
-    })
-
     if (canPromptInstall.value) {
-      return {
-        outcome: 'ready',
-        hasInstallPromptEvent: hasInstallPromptEvent.value,
-        ...(manifestResult || {}),
-      }
+      return await promptNativeInstall()
     }
 
     await waitForInstallPrompt({
       waitMs: options.waitMs,
       pollMs: options.pollMs,
+      rejectDefaultManifest: true,
     })
 
     if (canPromptInstall.value) {

@@ -4,6 +4,7 @@ import {
   applyIosPwaMetadata,
   applyLocalPwaManifest,
   applyStoredPwaManifestUrl,
+  clearStoredPwaManifestData,
   createAndStorePwaManifest,
   fetchAndStorePwaManifest,
   getStoredPwaManifestInfo,
@@ -69,6 +70,7 @@ function resolvePwaInstallName(pwaInfo = {}) {
 
 function resolvePwaManifestOverrides(pwaInfo = {}) {
   const name = resolvePwaInstallName(pwaInfo)
+  const icon = pwaInfo.logo || pwaInfo.pwa_logo || pwaInfo.pwaLogo || pwaInfo.icon || ''
 
   return {
     name,
@@ -79,14 +81,16 @@ function resolvePwaManifestOverrides(pwaInfo = {}) {
       pwaInfo.store_description ||
       pwaInfo.storeDescription ||
       '',
+    icon,
     screenshots: pwaInfo.screenshots || pwaInfo.pwa_carousel || pwaInfo.pwaCarousel || [],
   }
 }
 
 function applyPwaInstallMetadata(pwaInfo = {}) {
+  const icon = pwaInfo.logo || pwaInfo.pwa_logo || pwaInfo.pwaLogo || pwaInfo.icon || ''
   const metadata = {
     name: resolvePwaInstallName(pwaInfo),
-    icon: pwaInfo.icon || pwaInfo.logo || pwaInfo.pwa_logo || pwaInfo.pwaLogo || '',
+    icon,
   }
 
   applyIosPwaMetadata({
@@ -171,6 +175,10 @@ export const pwaService = {
     const requestKey = getPwaManifestRequestKey(params, requestOptions)
 
     return await runPwaManifestRequestOnce(pendingRefreshManifestRequests, requestKey, async () => {
+      if (forceRefresh) {
+        await clearStoredPwaManifestData()
+      }
+
       const pwaInfo = await pwaService.getPwaInfo(params, { forceRefresh })
       applyPwaInstallMetadata(pwaInfo)
       const manifestOverrides = resolvePwaManifestOverrides(pwaInfo)

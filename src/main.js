@@ -16,9 +16,9 @@ if (shouldEnableVConsole) {
     .catch(() => {})
 }
 
-initializePwaInstallPromptListeners()
 initializePwaDisplayModeClasses()
 applyStoredPwaManifestUrl()
+initializePwaInstallPromptListeners()
 
 const canUseServiceWorker =
   'serviceWorker' in navigator && (window.isSecureContext || import.meta.env.PROD)

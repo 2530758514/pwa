@@ -17,11 +17,11 @@ The phone-side `127.0.0.1` URL is treated as a trustworthy local origin, so serv
 
 ## Manifest strategy
 
-The first page load uses `/manifest.webmanifest` so Chrome can always detect a valid manifest before `/pwa_h5_detail` resolves. After `/pwa_h5_detail` returns `config_url`, the shell fetches that remote manifest, verifies it is valid JSON, and switches the manifest link directly to the backend-provided manifest URL.
+The first page load uses `/manifest.webmanifest` so Chrome can always detect a valid manifest before `/pwa_h5_detail` resolves. After `/pwa_h5_detail` returns `config_url`, the shell fetches that remote manifest with a versioned no-store request, merges the install fields returned by the detail API, and switches the manifest link to a versioned dynamic manifest when the service worker can serve it. If the service worker is not controlling the page yet, the shell falls back to the versioned backend manifest URL.
 
 Remote display fields such as `name`, `short_name`, `description`, `icons`, `screenshots`, `theme_color`, and `background_color` are kept. Shell launch fields are fixed to this root-entry project: `start_url=/`, `scope=/`, and the `web+hslot` protocol handler opens `/`. A same-origin remote manifest `id` is kept when available so dynamic app identity can still differ by backend config.
 
-`/manifest.webmanifest` is the first-load fallback. `/pwa-dynamic-manifest.webmanifest` is only a generated-manifest fallback for cases where the backend does not provide `config_url`; the normal dynamic install path should use the returned `config_url` directly.
+`/manifest.webmanifest` is the first-load fallback. `/pwa-dynamic-manifest.webmanifest` is the preferred install manifest after dynamic data has been resolved because it contains the normalized API fields. When `/pwa_h5_detail` returns `icon`, the generated install manifest uses that icon and does not mix in the local `/pwa-icons/*` fallback icons. The returned `config_url` is kept as the network fallback when the dynamic manifest cannot be served yet.
 
 If `config_url` is cross-origin, the manifest host must allow CORS from the PWA shell domain. The default link/fetch mode is anonymous; set `VITE_PWA_MANIFEST_CROSSORIGIN=use-credentials` only when that manifest host requires cookies and sends credentialed CORS headers.
 

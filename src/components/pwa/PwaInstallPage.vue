@@ -208,8 +208,11 @@ async function prepareInstallPrompt(options = {}) {
 
   await prepareInstallManifest({ forceRefresh })
 
-  if (!isApplePwaRedirectDevice.value && !canPromptInstall.value) {
-    await waitForInstallPrompt(options)
+  if (!isApplePwaRedirectDevice.value) {
+    await waitForInstallPrompt({
+      ...options,
+      rejectDefaultManifest: true,
+    })
   }
 }
 
