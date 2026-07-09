@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
-import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
+import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 
 const FALLBACK_IFRAME_HEIGHT = '100vh'
 
@@ -78,6 +78,7 @@ function resolveIframeUrl(sourceUrl, pwaInfo = {}) {
     }
 
     applyPwaIdentityParams(targetUrl.searchParams, pwaInfo)
+    applyPwaAppOpenParam(targetUrl.searchParams)
 
     return targetUrl.toString()
   } catch {

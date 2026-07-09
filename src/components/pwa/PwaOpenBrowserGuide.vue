@@ -27,6 +27,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  closable: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits(['open-browser'])
@@ -86,6 +90,8 @@ async function copyCurrentUrl() {
 }
 
 function close() {
+  if (!props.closable) return
+
   visible.value = false
 }
 </script>
@@ -101,6 +107,7 @@ function close() {
       <div class="pwa-open-browser-guide__header">
         <h2 class="pwa-open-browser-guide__title">{{ t('pwaPage.browserGuide.title') }}</h2>
         <button
+          v-if="closable"
           type="button"
           class="pwa-open-browser-guide__close"
           :aria-label="t('pwaPage.browserGuide.close')"

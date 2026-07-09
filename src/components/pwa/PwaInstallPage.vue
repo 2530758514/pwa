@@ -89,6 +89,7 @@ let installProgressTimer = null
 let androidPostInstallAutoOpenStartTimer = null
 let androidPostInstallAutoOpenRetryTimer = null
 let postInstallActionStarted = false
+let openBrowserGuideAutoOpenAttempted = false
 let toastTimer = null
 
 const appInfo = computed(() => {
@@ -128,6 +129,7 @@ const effectiveShowQrCode = computed(() => showQrCode.value && qrCodeEnabled.val
 const isApplePwaRedirectDevice = computed(() => resolveIsAppleDevice())
 const isAndroidPwaInstallDevice = computed(() => resolveIsAndroidDevice())
 const isInAppBrowser = computed(() => resolveIsInAppBrowser())
+const isFeishuInAppBrowser = computed(() => resolveIsFeishuInAppBrowser())
 const isMobileExternalBrowserGuideDevice = computed(
   () => isAndroidPwaInstallDevice.value || isApplePwaRedirectDevice.value,
 )
@@ -137,6 +139,9 @@ const shouldUseOpenBrowserGuide = computed(
     isInAppBrowser.value &&
     !isInstalled.value &&
     !isStandalone.value,
+)
+const shouldLockOpenBrowserGuide = computed(
+  () => shouldUseOpenBrowserGuide.value && isFeishuInAppBrowser.value,
 )
 const openBrowserGuideUrl = computed(() => resolveCurrentPageUrl())
 const openBrowserGuideType = computed(() => (isApplePwaRedirectDevice.value ? 'safari' : 'chrome'))
@@ -241,6 +246,12 @@ function resolveIsInAppBrowser() {
   return /Lark|Feishu|LarkLocale|FBAN|FBAV|FB_IAB|Instagram|Line|MicroMessenger|DingTalk|Twitter|WhatsApp/i.test(
     userAgent,
   )
+}
+
+function resolveIsFeishuInAppBrowser() {
+  if (typeof navigator === 'undefined') return false
+
+  return /Lark|Feishu|LarkLocale/i.test(navigator.userAgent || '')
 }
 
 function syncQrCodeVisibility() {
@@ -494,8 +505,20 @@ function buildChromeIntentUrl(url) {
   }
 }
 
-function openExternalBrowserGuide() {
+function maybeAutoOpenExternalBrowserFromGuide() {
+  if (!shouldLockOpenBrowserGuide.value || openBrowserGuideAutoOpenAttempted) return
+  if (typeof window === 'undefined') return
+
+  openBrowserGuideAutoOpenAttempted = true
+  window.setTimeout(openCurrentPageInExternalBrowser, 0)
+}
+
+function openExternalBrowserGuide(options = {}) {
   showOpenBrowserGuide.value = true
+
+  if (options.autoOpen === true) {
+    maybeAutoOpenExternalBrowserFromGuide()
+  }
 }
 
 function openCurrentPageInExternalBrowser() {
@@ -639,7 +662,7 @@ function handlePopupDownload(controller) {
   }
 
   if (shouldUseOpenBrowserGuide.value) {
-    openExternalBrowserGuide()
+    openExternalBrowserGuide({ autoOpen: shouldLockOpenBrowserGuide.value })
     controller?.finish?.({ repeat: false })
     return
   }
@@ -662,7 +685,7 @@ onMounted(() => {
   void setupQrCode()
 
   if (shouldUseOpenBrowserGuide.value) {
-    openExternalBrowserGuide()
+    openExternalBrowserGuide({ autoOpen: shouldLockOpenBrowserGuide.value })
   }
 })
 
@@ -680,6 +703,12 @@ watch(isInstalled, (installed) => {
 
   clearPostInstallActionTimer()
   schedulePostInstallAction(POST_INSTALL_EVENT_ACTION_DELAY_MS)
+})
+
+watch(showOpenBrowserGuide, (visible) => {
+  if (visible || !shouldLockOpenBrowserGuide.value) return
+
+  openExternalBrowserGuide({ autoOpen: true })
 })
 </script>
 
@@ -727,6 +756,7 @@ watch(isInstalled, (installed) => {
         v-model="showOpenBrowserGuide"
         :browser-name="openBrowserGuideName"
         :browser-type="openBrowserGuideType"
+        :closable="!shouldLockOpenBrowserGuide"
         :current-url="openBrowserGuideUrl"
         :open-label="openBrowserGuideLabel"
         @open-browser="openCurrentPageInExternalBrowser"
