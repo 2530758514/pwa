@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
 import { t } from '@/content/pwaText'
 import {
   PWA_FAMILY_LINKS,
@@ -55,6 +55,9 @@ const ANDROID_POST_INSTALL_AUTO_OPEN_INTERVAL_MS = 1000
 const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
+const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
+const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
+const OPEN_BROWSER_USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
 
 const {
   canPromptInstall,
@@ -90,6 +93,8 @@ let androidPostInstallAutoOpenStartTimer = null
 let androidPostInstallAutoOpenRetryTimer = null
 let postInstallActionStarted = false
 let openBrowserGuideAutoOpenAttempted = false
+let openBrowserGuideAutoOpenTimer = null
+let openBrowserGuideUserGestureRetryListening = false
 let toastTimer = null
 
 const appInfo = computed(() => {
@@ -129,7 +134,7 @@ const effectiveShowQrCode = computed(() => showQrCode.value && qrCodeEnabled.val
 const isApplePwaRedirectDevice = computed(() => resolveIsAppleDevice())
 const isAndroidPwaInstallDevice = computed(() => resolveIsAndroidDevice())
 const isInAppBrowser = computed(() => resolveIsInAppBrowser())
-const isFeishuInAppBrowser = computed(() => resolveIsFeishuInAppBrowser())
+const isLockedInAppBrowser = computed(() => resolveIsLockedInAppBrowser())
 const isMobileExternalBrowserGuideDevice = computed(
   () => isAndroidPwaInstallDevice.value || isApplePwaRedirectDevice.value,
 )
@@ -141,7 +146,7 @@ const shouldUseOpenBrowserGuide = computed(
     !isStandalone.value,
 )
 const shouldLockOpenBrowserGuide = computed(
-  () => shouldUseOpenBrowserGuide.value && isFeishuInAppBrowser.value,
+  () => shouldUseOpenBrowserGuide.value && isLockedInAppBrowser.value,
 )
 const openBrowserGuideUrl = computed(() => resolveCurrentPageUrl())
 const openBrowserGuideType = computed(() => (isApplePwaRedirectDevice.value ? 'safari' : 'chrome'))
@@ -248,10 +253,10 @@ function resolveIsInAppBrowser() {
   )
 }
 
-function resolveIsFeishuInAppBrowser() {
+function resolveIsLockedInAppBrowser() {
   if (typeof navigator === 'undefined') return false
 
-  return /Lark|Feishu|LarkLocale/i.test(navigator.userAgent || '')
+  return /Lark|Feishu|LarkLocale|FBAN|FBAV|FB_IAB/i.test(navigator.userAgent || '')
 }
 
 function syncQrCodeVisibility() {
@@ -490,6 +495,40 @@ function resolveCurrentPageUrl() {
   return window.location.href
 }
 
+function resolveInAppVueOpenAttemptKey() {
+  if (typeof window === 'undefined') return ''
+
+  try {
+    const cleanUrl = new URL(window.location.href)
+
+    return `${IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX}${cleanUrl.origin}${cleanUrl.pathname}${cleanUrl.search}`
+  } catch {
+    return ''
+  }
+}
+
+function hasInAppVueOpenAttempt() {
+  const attemptKey = resolveInAppVueOpenAttemptKey()
+  if (!attemptKey || typeof sessionStorage === 'undefined') return false
+
+  try {
+    return sessionStorage.getItem(attemptKey) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markInAppVueOpenAttempt() {
+  const attemptKey = resolveInAppVueOpenAttemptKey()
+  if (!attemptKey || typeof sessionStorage === 'undefined') return
+
+  try {
+    sessionStorage.setItem(attemptKey, '1')
+  } catch {
+    /* empty */
+  }
+}
+
 function buildChromeIntentUrl(url) {
   if (typeof window === 'undefined') return url
 
@@ -499,24 +538,10 @@ function buildChromeIntentUrl(url) {
     const path = `${targetUrl.host}${targetUrl.pathname}${targetUrl.search}`
     const fallbackUrl = encodeURIComponent(targetUrl.href)
 
-    return `intent://${path}#Intent;scheme=${scheme};package=com.android.chrome;S.browser_fallback_url=${fallbackUrl};end`
+    return `intent://${path}#Intent;scheme=${scheme};package=com.android.chrome;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${fallbackUrl};end`
   } catch {
     return url
   }
-}
-
-function clickExternalBrowserLink(url, target = '_blank') {
-  if (typeof document === 'undefined') return
-
-  const link = document.createElement('a')
-  link.href = url
-  link.target = target
-  link.rel = 'noopener noreferrer'
-  link.style.display = 'none'
-
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
 }
 
 function autoOpenCurrentPageInExternalBrowser() {
@@ -525,23 +550,69 @@ function autoOpenCurrentPageInExternalBrowser() {
   const currentUrl = openBrowserGuideUrl.value || window.location.href
 
   if (isAndroidPwaInstallDevice.value) {
-    clickExternalBrowserLink(buildChromeIntentUrl(currentUrl), '_self')
+    window.location.href = buildChromeIntentUrl(currentUrl)
     return
   }
 
-  clickExternalBrowserLink(currentUrl)
+  openCurrentPageInExternalBrowser()
+}
+
+function handleOpenBrowserUserGestureRetry() {
+  if (!shouldLockOpenBrowserGuide.value || !showOpenBrowserGuide.value) return
+
+  autoOpenCurrentPageInExternalBrowser()
+}
+
+function setupOpenBrowserUserGestureRetry() {
+  if (typeof window === 'undefined' || openBrowserGuideUserGestureRetryListening) return
+
+  OPEN_BROWSER_USER_GESTURE_EVENTS.forEach((eventName) => {
+    window.addEventListener(eventName, handleOpenBrowserUserGestureRetry, true)
+  })
+  openBrowserGuideUserGestureRetryListening = true
+}
+
+function teardownOpenBrowserUserGestureRetry() {
+  if (typeof window === 'undefined' || !openBrowserGuideUserGestureRetryListening) return
+
+  OPEN_BROWSER_USER_GESTURE_EVENTS.forEach((eventName) => {
+    window.removeEventListener(eventName, handleOpenBrowserUserGestureRetry, true)
+  })
+  openBrowserGuideUserGestureRetryListening = false
+}
+
+function clearOpenBrowserAutoOpenTimer() {
+  if (!openBrowserGuideAutoOpenTimer || typeof window === 'undefined') return
+
+  window.clearTimeout(openBrowserGuideAutoOpenTimer)
+  openBrowserGuideAutoOpenTimer = null
 }
 
 function maybeAutoOpenExternalBrowserFromGuide() {
   if (!shouldLockOpenBrowserGuide.value || openBrowserGuideAutoOpenAttempted) return
   if (typeof window === 'undefined') return
+  if (hasInAppVueOpenAttempt()) return
 
   openBrowserGuideAutoOpenAttempted = true
-  autoOpenCurrentPageInExternalBrowser()
+
+  void nextTick(() => {
+    clearOpenBrowserAutoOpenTimer()
+    openBrowserGuideAutoOpenTimer = window.setTimeout(() => {
+      openBrowserGuideAutoOpenTimer = null
+      if (!shouldLockOpenBrowserGuide.value || !showOpenBrowserGuide.value) return
+
+      markInAppVueOpenAttempt()
+      autoOpenCurrentPageInExternalBrowser()
+    }, OPEN_BROWSER_AUTO_OPEN_DELAY_MS)
+  })
 }
 
 function openExternalBrowserGuide(options = {}) {
   showOpenBrowserGuide.value = true
+
+  if (shouldLockOpenBrowserGuide.value) {
+    setupOpenBrowserUserGestureRetry()
+  }
 
   if (options.autoOpen === true) {
     maybeAutoOpenExternalBrowserFromGuide()
@@ -720,6 +791,8 @@ onBeforeUnmount(() => {
   clearPostInstallActionTimer()
   clearInstallProgressTimer()
   clearAndroidPostInstallAutoOpenTimers()
+  clearOpenBrowserAutoOpenTimer()
+  teardownOpenBrowserUserGestureRetry()
   teardownQrCode()
   if (toastTimer) window.clearTimeout(toastTimer)
 })
@@ -733,7 +806,18 @@ watch(isInstalled, (installed) => {
 })
 
 watch(showOpenBrowserGuide, (visible) => {
-  if (visible || !shouldLockOpenBrowserGuide.value) return
+  if (visible) {
+    if (shouldLockOpenBrowserGuide.value) {
+      setupOpenBrowserUserGestureRetry()
+    }
+
+    return
+  }
+
+  teardownOpenBrowserUserGestureRetry()
+  clearOpenBrowserAutoOpenTimer()
+
+  if (!shouldLockOpenBrowserGuide.value) return
 
   openExternalBrowserGuide({ autoOpen: true })
 })
