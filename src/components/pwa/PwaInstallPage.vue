@@ -12,6 +12,7 @@ import {
 import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
+import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
 import PwaBottomNav from './PwaBottomNav.vue'
@@ -133,6 +134,10 @@ const qrCodeEnabled = computed(() => Number(props.pwaInfo?.qr_code_enabled ?? 1)
 const effectiveShowQrCode = computed(() => showQrCode.value && qrCodeEnabled.value)
 const isApplePwaRedirectDevice = computed(() => resolveIsAppleDevice())
 const isAndroidPwaInstallDevice = computed(() => resolveIsAndroidDevice())
+const {
+  requestPermission: requestShellNotificationPermission,
+  requestSubscription: requestShellNotificationSubscription,
+} = usePwaShellNotifications()
 const isInAppBrowser = computed(() => resolveIsInAppBrowser())
 const isFacebookInAppBrowser = computed(() => resolveIsFacebookInAppBrowser())
 const isLockedInAppBrowser = computed(() => resolveIsLockedInAppBrowser())
@@ -773,6 +778,8 @@ function handlePopupDownload(controller) {
     return
   }
 
+  requestAndroidNotificationPermission()
+
   if (shouldUseOpenBrowserGuide.value) {
     openExternalBrowserGuide({ autoOpen: shouldLockOpenBrowserGuide.value })
     controller?.finish?.({ repeat: false })
@@ -790,7 +797,23 @@ function handlePopupDownload(controller) {
   })
 }
 
+function requestAndroidNotificationPermission() {
+  if (!isAndroidPwaInstallDevice.value) return
+
+  // This stays in the page-entry and CTA paths only. The browser owns the
+  // system confirmation; the shell intentionally renders no custom prompt.
+  void requestShellNotificationPermission().then((nextPermission) => {
+    if (nextPermission === 'granted') {
+      void requestShellNotificationSubscription({ pwaInfo: props.pwaInfo })
+    }
+  })
+}
+
 onMounted(() => {
+  // Android enters this landing page: make the first native permission attempt.
+  // Browsers may suppress it without a user gesture; the main CTA retries below.
+  requestAndroidNotificationPermission()
+
   void prepareInstallPrompt().finally(() => {
     installPromptProbeFinished.value = true
   })

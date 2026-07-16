@@ -2,6 +2,7 @@
 import './style.css'
 import App from './App.vue'
 import { initializePwaInstallPromptListeners } from './composables/pwa/usePwaInstallPrompt'
+import { initializePwaShellNotifications } from './composables/pwa/usePwaShellNotifications'
 import { initializePwaDisplayModeClasses } from './shared/pwa/displayMode'
 import { applyStoredPwaManifestUrl } from './shared/pwa/manifest'
 
@@ -19,6 +20,7 @@ if (shouldEnableVConsole) {
 initializePwaDisplayModeClasses()
 applyStoredPwaManifestUrl()
 initializePwaInstallPromptListeners()
+initializePwaShellNotifications()
 
 const canUseServiceWorker =
   'serviceWorker' in navigator && (window.isSecureContext || import.meta.env.PROD)

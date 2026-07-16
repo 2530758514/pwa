@@ -1,11 +1,14 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v3'
+const SW_VERSION = 'pwa-shell-runtime-v4'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
 const LEGACY_CACHE_NAMES = ['h5slot-pwa-manifest', 'pwa-shell-manifest']
 const DYNAMIC_MANIFEST_PATH = '/pwa-dynamic-manifest.webmanifest'
 const STATIC_MANIFEST_PATH = '/manifest.webmanifest'
 const APP_SHELL_PATH = '/'
+const DEFAULT_NOTIFICATION_ICON = '/pwa-icons/icon-192.png'
+const DEFAULT_NOTIFICATION_BADGE = '/pwa-icons/icon-192.png'
+const DEFAULT_NOTIFICATION_TITLE = 'SlotFront H5'
 const CORE_ASSET_PATHS = [
   APP_SHELL_PATH,
   DYNAMIC_MANIFEST_PATH,
@@ -103,6 +106,165 @@ function createFallbackManifestResponse() {
   })
 }
 
+function parseJsonPayload(data) {
+  if (!data) return {}
+
+  try {
+    return data.json()
+  } catch {
+    try {
+      return JSON.parse(data.text())
+    } catch {
+      return {}
+    }
+  }
+}
+
+function normalizeRedirect(value) {
+  if (typeof value !== 'string') return ''
+
+  try {
+    const targetUrl = new URL(value, self.location.origin)
+
+    if (targetUrl.origin !== self.location.origin || !targetUrl.pathname.startsWith('/')) {
+      return ''
+    }
+
+    return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`
+  } catch {
+    return ''
+  }
+}
+
+function normalizeActions(actions) {
+  if (!Array.isArray(actions)) return { actions: [], redirects: {} }
+
+  return actions.reduce(
+    (result, item) => {
+      if (!item || typeof item !== 'object') return result
+
+      const action = typeof item.action === 'string' ? item.action.trim() : ''
+      const title = typeof item.title === 'string' ? item.title.trim() : ''
+      const redirect = normalizeRedirect(item.url || item.redirect || item.link || '')
+
+      if (!action || !title || !redirect) return result
+
+      result.actions.push({ action, title, icon: item.icon || undefined })
+      result.redirects[action] = redirect
+      return result
+    },
+    { actions: [], redirects: {} },
+  )
+}
+
+function normalizeNotificationPayload(payload = {}) {
+  const safePayload = payload && typeof payload === 'object' ? payload : {}
+  const data = safePayload.data && typeof safePayload.data === 'object' ? safePayload.data : {}
+  const notification =
+    safePayload.notification && typeof safePayload.notification === 'object'
+      ? safePayload.notification
+      : data.notification && typeof data.notification === 'object'
+        ? data.notification
+        : {}
+  const notificationId =
+    safePayload.notificationId || notification.notificationId || data.notificationId || data.id || ''
+  const tag =
+    safePayload.tag ||
+    notification.tag ||
+    data.tag ||
+    (notificationId ? `pwa-shell-${notificationId}` : `pwa-shell-${Date.now()}`)
+  const timestamp = Number(safePayload.timestamp ?? notification.timestamp ?? data.timestamp)
+  const actionConfig = normalizeActions(safePayload.actions || notification.actions || data.actions)
+  const redirect = normalizeRedirect(
+    safePayload.url || safePayload.redirect || notification.url || notification.redirect || data.url || data.redirect || '',
+  )
+  const options = {
+    body: safePayload.body || notification.body || data.body || '',
+    icon: safePayload.icon || notification.icon || data.icon || DEFAULT_NOTIFICATION_ICON,
+    badge: safePayload.badge || notification.badge || data.badge || DEFAULT_NOTIFICATION_BADGE,
+    image: safePayload.image || notification.image || data.image || undefined,
+    tag,
+    renotify: Boolean(safePayload.renotify ?? notification.renotify ?? data.renotify),
+    requireInteraction: Boolean(
+      safePayload.requireInteraction ?? notification.requireInteraction ?? data.requireInteraction,
+    ),
+    data: {
+      ...data,
+      notificationId: String(notificationId || ''),
+      redirect,
+      actionRedirects: actionConfig.redirects,
+    },
+  }
+
+  if (actionConfig.actions.length) options.actions = actionConfig.actions
+  if (!options.image) delete options.image
+  if (Number.isFinite(timestamp) && timestamp > 0) options.timestamp = timestamp
+
+  return {
+    title: safePayload.title || notification.title || data.title || DEFAULT_NOTIFICATION_TITLE,
+    options,
+  }
+}
+
+async function broadcastNotification(payload, source) {
+  const notification = normalizeNotificationPayload(payload)
+  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+
+  clients.forEach((client) => {
+    client.postMessage({
+      type: 'PWA_SHELL_NOTIFICATION_RECEIVED',
+      source,
+      notification: {
+        title: notification.title,
+        body: notification.options.body,
+        tag: notification.options.tag,
+        redirect: notification.options.data.redirect,
+        data: notification.options.data,
+      },
+    })
+  })
+}
+
+function handleNotificationPayload(payload, source = 'push') {
+  const notification = normalizeNotificationPayload(payload)
+
+  return Promise.all([
+    self.registration.showNotification(notification.title, notification.options),
+    broadcastNotification(payload, source),
+  ])
+}
+
+function resolveShellNotificationUrl(redirect) {
+  const shellUrl = new URL(APP_SHELL_PATH, self.location.origin)
+  const safeRedirect = normalizeRedirect(redirect)
+
+  if (safeRedirect) shellUrl.searchParams.set('redirect', safeRedirect)
+
+  return shellUrl
+}
+
+async function openOrFocusShellWindow(targetUrl) {
+  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  const sameOriginClient = clients.find((client) => {
+    try {
+      return new URL(client.url).origin === self.location.origin
+    } catch {
+      return false
+    }
+  })
+
+  if (sameOriginClient) {
+    try {
+      const navigatedClient = await sameOriginClient.navigate(targetUrl.href)
+      return (navigatedClient || sameOriginClient).focus()
+    } catch {
+      // A stale client can reject navigation. Opening the shell is still valid.
+    }
+  }
+
+  return self.clients.openWindow(targetUrl.href)
+}
+
 async function fetchStaticManifestFallback() {
   try {
     const response = await fetch(STATIC_MANIFEST_PATH, {
@@ -129,6 +291,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'PWA_SHELL_SW_VERSION') {
     event.source?.postMessage({ type: 'PWA_SHELL_SW_VERSION', version: SW_VERSION })
+    return
+  }
+
+  if (event.data?.type === 'PWA_SHELL_SHOW_NOTIFICATION') {
+    event.waitUntil(handleNotificationPayload(event.data.payload || {}, 'simulate'))
   }
 })
 
@@ -189,4 +356,21 @@ self.addEventListener('fetch', (event) => {
       ),
     )
   }
+})
+
+self.addEventListener('push', (event) => {
+  event.waitUntil(handleNotificationPayload(parseJsonPayload(event.data), 'push'))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+
+  const actionRedirects = event.notification.data?.actionRedirects || {}
+  const redirect =
+    (event.action && typeof actionRedirects[event.action] === 'string'
+      ? actionRedirects[event.action]
+      : '') || event.notification.data?.redirect
+  const targetUrl = resolveShellNotificationUrl(redirect)
+
+  event.waitUntil(openOrFocusShellWindow(targetUrl))
 })
