@@ -13,7 +13,20 @@ export const http = axios.create({
   },
 })
 
+export const PWA_ID_HEADER_NAME = 'X-Pwa-Id'
+
 const SUCCESS_CODES = new Set([1, 200, 201, 204])
+
+export function setPwaIdRequestHeader(value) {
+  const pwaId = value === null || value === undefined ? '' : String(value).trim()
+
+  if (pwaId) {
+    http.defaults.headers.common[PWA_ID_HEADER_NAME] = pwaId
+    return
+  }
+
+  delete http.defaults.headers.common[PWA_ID_HEADER_NAME]
+}
 
 function normalizeCode(value) {
   const code = Number(value)

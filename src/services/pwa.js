@@ -1,5 +1,6 @@
 ﻿import { pwaApi } from '@/api/pwa'
 import { normalizePwaInfo } from '@/models/pwa'
+import { setPwaIdRequestHeader } from '@/shared/api/http'
 import {
   applyIosPwaMetadata,
   applyLocalPwaManifest,
@@ -111,11 +112,14 @@ export const pwaService = {
     }
 
     if (cachedPwaInfoResults.has(requestKey)) {
-      return cachedPwaInfoResults.get(requestKey)
+      const pwaInfo = cachedPwaInfoResults.get(requestKey)
+      setPwaIdRequestHeader(pwaInfo?.pwaId)
+      return pwaInfo
     }
 
     return await runPwaManifestRequestOnce(pendingPwaInfoRequests, requestKey, async () => {
       const pwaInfo = normalizePwaInfo(await pwaApi.getPwaInfo(params))
+      setPwaIdRequestHeader(pwaInfo.pwaId)
 
       cachedPwaInfoResults.set(requestKey, pwaInfo)
 
