@@ -1,7 +1,10 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v4'
+const SW_VERSION = 'pwa-shell-runtime-v6'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
+const NOTIFICATION_NAVIGATION_CACHE_NAME = 'pwa-shell-notification-navigation-v1'
+const NOTIFICATION_NAVIGATION_CACHE_PATH = '/__pwa_shell_notification_navigation__'
+const NOTIFICATION_NAVIGATION_MESSAGE_TYPE = 'PWA_SHELL_NOTIFICATION_NAVIGATE'
 const LEGACY_CACHE_NAMES = ['h5slot-pwa-manifest', 'pwa-shell-manifest']
 const DYNAMIC_MANIFEST_PATH = '/pwa-dynamic-manifest.webmanifest'
 const STATIC_MANIFEST_PATH = '/manifest.webmanifest'
@@ -234,16 +237,52 @@ function handleNotificationPayload(payload, source = 'push') {
   ])
 }
 
-function resolveShellNotificationUrl(redirect) {
-  const shellUrl = new URL(APP_SHELL_PATH, self.location.origin)
+function createNotificationNavigation(redirect) {
   const safeRedirect = normalizeRedirect(redirect)
 
-  if (safeRedirect) shellUrl.searchParams.set('redirect', safeRedirect)
+  if (!safeRedirect) return null
 
-  return shellUrl
+  const navigationId =
+    typeof crypto?.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `pwa-shell-${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+  return {
+    id: navigationId,
+    url: new URL(safeRedirect, self.location.origin).toString(),
+  }
 }
 
-async function openOrFocusShellWindow(targetUrl) {
+function getNotificationNavigationRequest() {
+  return new Request(
+    new URL(NOTIFICATION_NAVIGATION_CACHE_PATH, self.location.origin).toString(),
+  )
+}
+
+async function saveNotificationNavigation(navigation) {
+  if (!navigation) return
+
+  const cache = await caches.open(NOTIFICATION_NAVIGATION_CACHE_NAME)
+  await cache.put(
+    getNotificationNavigationRequest(),
+    new Response(JSON.stringify(navigation), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    }),
+  )
+}
+
+async function openOrFocusShellWindow(navigation) {
+  if (navigation) {
+    try {
+      await saveNotificationNavigation(navigation)
+    } catch {
+      // An already-open shell can still consume the direct postMessage below.
+    }
+  }
+
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
   const sameOriginClient = clients.find((client) => {
     try {
@@ -255,14 +294,20 @@ async function openOrFocusShellWindow(targetUrl) {
 
   if (sameOriginClient) {
     try {
-      const navigatedClient = await sameOriginClient.navigate(targetUrl.href)
-      return (navigatedClient || sameOriginClient).focus()
+      if (navigation) {
+        sameOriginClient.postMessage({
+          type: NOTIFICATION_NAVIGATION_MESSAGE_TYPE,
+          navigation,
+        })
+      }
+
+      return await sameOriginClient.focus()
     } catch {
-      // A stale client can reject navigation. Opening the shell is still valid.
+      // A stale client can reject focus. Opening the default shell is still valid.
     }
   }
 
-  return self.clients.openWindow(targetUrl.href)
+  return self.clients.openWindow(new URL(APP_SHELL_PATH, self.location.origin).toString())
 }
 
 async function fetchStaticManifestFallback() {
@@ -370,7 +415,7 @@ self.addEventListener('notificationclick', (event) => {
     (event.action && typeof actionRedirects[event.action] === 'string'
       ? actionRedirects[event.action]
       : '') || event.notification.data?.redirect
-  const targetUrl = resolveShellNotificationUrl(redirect)
+  const navigation = createNotificationNavigation(redirect)
 
-  event.waitUntil(openOrFocusShellWindow(targetUrl))
+  event.waitUntil(openOrFocusShellWindow(navigation))
 })

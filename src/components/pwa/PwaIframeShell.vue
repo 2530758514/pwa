@@ -1,10 +1,19 @@
 ﻿<script setup>
-import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
+import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
+import {
+  H5_NOTIFICATION_NAVIGATE,
+  H5_NOTIFICATION_NAVIGATION_APPLIED,
+  H5_NOTIFICATION_NAVIGATION_READY,
+  PWA_SHELL_NOTIFICATION_NAVIGATE,
+  clearPendingNotificationNavigation,
+  normalizeNotificationNavigation,
+  readPendingNotificationNavigation,
+} from '@/shared/pwa/notificationNavigation'
 
 const FALLBACK_IFRAME_HEIGHT = '100vh'
 const SHELL_ONLY_SEARCH_PARAMS = new Set(['redirect'])
@@ -26,6 +35,10 @@ const props = defineProps({
 
 const iframeViewportHeight = shallowRef(FALLBACK_IFRAME_HEIGHT)
 const { requestPermission, requestSubscription } = usePwaShellNotifications()
+const iframeRef = useTemplateRef('iframe')
+const iframeReady = shallowRef(false)
+const pendingNotificationNavigation = shallowRef(null)
+const activeNotificationLocation = shallowRef('')
 let pendingViewportSync = 0
 
 const iframeShellStyle = computed(() => ({
@@ -99,15 +112,55 @@ const detailH5Url = computed(() =>
   String(props.pwaInfo?.h5_url || props.pwaInfo?.h5Url || '').trim(),
 )
 
-const iframeSrc = computed(() => {
+const baseIframeSrc = computed(() => {
   const fallbackUrl = props.loading ? '' : String(H5_APP_URL || '').trim()
   const sourceUrl = detailH5Url.value || fallbackUrl
 
   return sourceUrl ? resolveIframeUrl(sourceUrl, props.pwaInfo) : ''
 })
 
+function resolveNotificationIframeUrl(sourceUrl, location) {
+  if (!sourceUrl || !location || typeof window === 'undefined') return sourceUrl
+
+  try {
+    const iframeUrl = new URL(sourceUrl, window.location.origin)
+    const routeUrl = new URL(location, iframeUrl.origin)
+
+    if (routeUrl.origin !== iframeUrl.origin || !routeUrl.pathname.startsWith('/')) {
+      return sourceUrl
+    }
+
+    iframeUrl.pathname = routeUrl.pathname
+    routeUrl.searchParams.forEach((value, key) => {
+      iframeUrl.searchParams.set(key, value)
+    })
+    iframeUrl.hash = routeUrl.hash
+
+    return iframeUrl.toString()
+  } catch {
+    return sourceUrl
+  }
+}
+
+const iframeSrc = computed(() =>
+  resolveNotificationIframeUrl(baseIframeSrc.value, activeNotificationLocation.value),
+)
+
+const iframeOrigin = computed(() => {
+  if (!iframeSrc.value || typeof window === 'undefined') return ''
+
+  try {
+    return new URL(iframeSrc.value, window.location.origin).origin
+  } catch {
+    return ''
+  }
+})
+
 function handleIframeLoad() {
+  iframeReady.value = true
   requestAndroidNotificationPermission()
+  postPendingNotificationNavigation()
+  void confirmLoadedIframeNotificationNavigation()
 }
 
 function requestAndroidNotificationPermission() {
@@ -128,6 +181,130 @@ function reload() {
   }
 }
 
+function postPendingNotificationNavigation() {
+  const iframeWindow = iframeRef.value?.contentWindow
+  const navigation = pendingNotificationNavigation.value
+
+  if (!iframeReady.value || !iframeWindow || !iframeOrigin.value || !navigation) return
+
+  const targetUrl = new URL(navigation.location, iframeOrigin.value)
+
+  iframeWindow.postMessage(
+    {
+      type: H5_NOTIFICATION_NAVIGATE,
+      navigation: {
+        id: navigation.id,
+        url: targetUrl.toString(),
+      },
+    },
+    iframeOrigin.value,
+  )
+}
+
+function applyPendingNotificationNavigation(navigation) {
+  pendingNotificationNavigation.value = navigation
+
+  if (navigation?.location) {
+    activeNotificationLocation.value = navigation.location
+  }
+
+  postPendingNotificationNavigation()
+}
+
+async function syncPendingNotificationNavigation() {
+  applyPendingNotificationNavigation(await readPendingNotificationNavigation())
+}
+
+function hasIframeReachedNavigation(navigation) {
+  const iframeWindow = iframeRef.value?.contentWindow
+
+  if (!iframeWindow || !iframeOrigin.value || !navigation?.location) return false
+
+  try {
+    const actualUrl = new URL(iframeWindow.location.href)
+    const expectedUrl = new URL(navigation.location, iframeOrigin.value)
+
+    if (
+      actualUrl.origin !== expectedUrl.origin ||
+      actualUrl.pathname !== expectedUrl.pathname ||
+      (expectedUrl.hash && actualUrl.hash !== expectedUrl.hash)
+    ) {
+      return false
+    }
+
+    return Array.from(expectedUrl.searchParams).every(
+      ([key, value]) => actualUrl.searchParams.get(key) === value,
+    )
+  } catch {
+    // Cross-origin iframe access is blocked; the H5 postMessage acknowledgement handles it.
+    return false
+  }
+}
+
+async function completeNotificationNavigation(navigation) {
+  const cleared = await clearPendingNotificationNavigation(navigation.id)
+
+  if (!cleared) {
+    void syncPendingNotificationNavigation()
+    return
+  }
+
+  if (pendingNotificationNavigation.value?.id === navigation.id) {
+    pendingNotificationNavigation.value = null
+  }
+}
+
+async function confirmLoadedIframeNotificationNavigation() {
+  const navigation = pendingNotificationNavigation.value
+
+  if (!navigation || !hasIframeReachedNavigation(navigation)) return
+
+  await completeNotificationNavigation(navigation)
+}
+
+function handleServiceWorkerMessage(event) {
+  if (event.data?.type !== PWA_SHELL_NOTIFICATION_NAVIGATE) return
+
+  const navigation = normalizeNotificationNavigation(event.data?.navigation)
+
+  if (navigation) {
+    applyPendingNotificationNavigation(navigation)
+  }
+
+  void syncPendingNotificationNavigation()
+}
+
+function handleIframeMessage(event) {
+  const iframeWindow = iframeRef.value?.contentWindow
+
+  if (
+    event.source !== iframeWindow ||
+    event.origin !== iframeOrigin.value
+  ) {
+    return
+  }
+
+  if (event.data?.type === H5_NOTIFICATION_NAVIGATION_READY) {
+    postPendingNotificationNavigation()
+    return
+  }
+
+  const navigation = pendingNotificationNavigation.value
+
+  if (
+    event.data?.type !== H5_NOTIFICATION_NAVIGATION_APPLIED ||
+    event.data?.navigationId !== navigation?.id
+  ) {
+    return
+  }
+
+  void completeNotificationNavigation(navigation)
+}
+
+watch(iframeSrc, () => {
+  iframeReady.value = false
+})
+
 onMounted(() => {
   syncIframeViewportHeight()
 
@@ -140,6 +317,9 @@ onMounted(() => {
   window.addEventListener('focusin', syncIframeViewportHeight)
   window.addEventListener('focusout', syncIframeViewportHeight)
   document.addEventListener('visibilitychange', syncIframeViewportHeight)
+  navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage)
+  window.addEventListener('message', handleIframeMessage)
+  void syncPendingNotificationNavigation()
   requestAndroidNotificationPermission()
 })
 
@@ -153,6 +333,8 @@ onUnmounted(() => {
   window.removeEventListener('focusin', syncIframeViewportHeight)
   window.removeEventListener('focusout', syncIframeViewportHeight)
   document.removeEventListener('visibilitychange', syncIframeViewportHeight)
+  navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage)
+  window.removeEventListener('message', handleIframeMessage)
 
   if (pendingViewportSync) {
     window.cancelAnimationFrame(pendingViewportSync)
@@ -170,10 +352,12 @@ onUnmounted(() => {
 
     <iframe
       v-else-if="iframeSrc"
+      ref="iframeRef"
       class="pwa-iframe-shell__frame"
       :src="iframeSrc"
       title="H5 app"
       allow="clipboard-read; clipboard-write; fullscreen; payment; autoplay; encrypted-media; geolocation; camera; microphone"
+      referrerpolicy="origin"
       allowfullscreen
       @load="handleIframeLoad"
     ></iframe>
