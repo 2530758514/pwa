@@ -100,6 +100,9 @@ function applyPwaInstallMetadata(pwaInfo = {}) {
 }
 
 export const pwaService = {
+  recordAndroidPwaDownloadPageVisit() {
+    return pwaApi.recordAndroidPwaDownloadPageVisit()
+  },
   async getPwaInfo(params = {}, options = {}) {
     const requestKey = getPwaManifestRequestKey(params, { detail: true })
 

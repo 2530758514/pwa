@@ -13,6 +13,7 @@ import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
+import { pwaService } from '@/services/pwa'
 import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
 import PwaBottomNav from './PwaBottomNav.vue'
@@ -59,6 +60,8 @@ const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
 const OPEN_BROWSER_USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
+const IOS_H5_REDIRECT_PARAM = 'pwa_ios_h5_redirect'
+const IOS_H5_REDIRECT_VALUE = '1'
 
 const {
   canPromptInstall,
@@ -332,6 +335,10 @@ function resolvePwaRedirectUrl(url) {
     }
 
     applyPwaIdentityParams(targetUrl.searchParams, props.pwaInfo)
+
+    if (isApplePwaRedirectDevice.value) {
+      targetUrl.searchParams.set(IOS_H5_REDIRECT_PARAM, IOS_H5_REDIRECT_VALUE)
+    }
 
     return targetUrl.toString()
   } catch {
@@ -810,6 +817,10 @@ function requestAndroidNotificationPermission() {
 }
 
 onMounted(() => {
+  if (isAndroidPwaInstallDevice.value) {
+    void pwaService.recordAndroidPwaDownloadPageVisit().catch(() => {})
+  }
+
   // Android enters this landing page: make the first native permission attempt.
   // Browsers may suppress it without a user gesture; the main CTA retries below.
   requestAndroidNotificationPermission()

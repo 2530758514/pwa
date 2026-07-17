@@ -10,4 +10,17 @@ export const pwaApi = {
       },
     })
   },
+  recordAndroidPwaDownloadPageVisit() {
+    return http.post(
+      '/web_pwa_statistics',
+      {
+        type: 1,
+      },
+      {
+        headers: {
+          'X-Platform': 'android_pwa',
+        },
+      },
+    )
+  },
 }
