@@ -12,8 +12,34 @@ const PWA_MANIFEST_CROSSORIGIN = String(import.meta.env.VITE_PWA_MANIFEST_CROSSO
   .toLowerCase()
 
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const MANIFEST_INFO_SCHEMA_VERSION = 5
+const MANIFEST_INFO_SCHEMA_VERSION = 7
 const MANIFEST_VERSION_PARAM = '_pwa_manifest_v'
+const SCREENSHOT_DIMENSION_TIMEOUT_MS = 4000
+const DEFAULT_INSTALL_DESCRIPTION =
+  'Welcome to our entertainment platform, designed to bring you a smooth, exciting, and enjoyable experience anytime, anywhere.'
+const DEFAULT_INSTALL_SCREENSHOTS = [
+  {
+    src: '/pwa-source/install-1.png',
+    sizes: '488x1055',
+    type: 'image/png',
+    form_factor: 'narrow',
+    label: 'Games home screen',
+  },
+  {
+    src: '/pwa-source/install-2.png',
+    sizes: '488x1055',
+    type: 'image/png',
+    form_factor: 'narrow',
+    label: 'Referral bonus screen',
+  },
+  {
+    src: '/pwa-source/install-3.png',
+    sizes: '488x1055',
+    type: 'image/png',
+    form_factor: 'narrow',
+    label: 'Recharge promotion screen',
+  },
+]
 const DEFAULT_ICON_192 = '/pwa-icons/icon-192.png'
 const DEFAULT_ICON_512 = '/pwa-icons/icon-512.png'
 const DEFAULT_INSTALL_ICONS = [
@@ -124,20 +150,142 @@ function normalizeManifestScreenshots(screenshots = []) {
       const src =
         typeof item === 'string'
           ? normalizeManifestUrl(item)
-          : normalizeManifestUrl(item?.src || item?.url || item?.image || item?.image_url)
+          : normalizeManifestUrl(item?.src || item?.url || item?.image || item?.image_url || item?.imageUrl)
 
       if (!src) return null
 
       const type = item?.type || inferImageMimeType(src)
+      const sizes = normalizeTextValue(item?.sizes || item?.size)
+      const label = normalizeTextValue(item?.label || item?.title)
 
       return {
         src,
-        sizes: item?.sizes || '390x844',
+        ...(sizes ? { sizes } : {}),
         ...(type ? { type } : {}),
         form_factor: item?.form_factor || item?.formFactor || 'narrow',
+        ...(label ? { label } : {}),
       }
     })
     .filter(Boolean)
+}
+
+function parseScreenshotSizes(value) {
+  const matched = String(value || '').match(/^(\d+)x(\d+)$/i)
+  if (!matched) return null
+
+  const width = Number(matched[1])
+  const height = Number(matched[2])
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null
+  }
+
+  return { width, height }
+}
+
+function isRicherInstallScreenshotSize({ width, height } = {}) {
+  if (!width || !height) return false
+
+  const minimumDimension = Math.min(width, height)
+  const maximumDimension = Math.max(width, height)
+
+  return minimumDimension >= 320 && maximumDimension <= 3840 && maximumDimension / minimumDimension <= 2.3
+}
+
+function isRicherInstallScreenshotType(type) {
+  const normalizedType = String(type || '').trim().toLowerCase()
+
+  return !normalizedType || normalizedType === 'image/jpeg' || normalizedType === 'image/png'
+}
+
+function getGreatestCommonDivisor(left, right) {
+  let first = Math.abs(Math.round(left))
+  let second = Math.abs(Math.round(right))
+
+  while (second) {
+    const remainder = first % second
+    first = second
+    second = remainder
+  }
+
+  return first || 1
+}
+
+function getScreenshotAspectRatioKey({ width, height }) {
+  const divisor = getGreatestCommonDivisor(width, height)
+
+  return `${Math.round(width) / divisor}:${Math.round(height) / divisor}`
+}
+
+function loadScreenshotDimensions(src) {
+  if (!src || typeof globalThis.Image !== 'function') return Promise.resolve(null)
+
+  return new Promise((resolve) => {
+    const image = new globalThis.Image()
+    let settled = false
+    let timer = null
+
+    const finish = (dimensions = null) => {
+      if (settled) return
+
+      settled = true
+      if (timer) globalThis.clearTimeout(timer)
+      image.onload = null
+      image.onerror = null
+      resolve(dimensions)
+    }
+
+    image.onload = () => {
+      finish({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      })
+    }
+    image.onerror = () => finish()
+    timer = globalThis.setTimeout(() => finish(), SCREENSHOT_DIMENSION_TIMEOUT_MS)
+    image.src = src
+  })
+}
+
+async function prepareRicherInstallScreenshots(screenshots = []) {
+  const normalizedScreenshots = normalizeManifestScreenshots(screenshots).slice(0, 8)
+  const candidates = (
+    await Promise.all(
+      normalizedScreenshots.map(async (screenshot) => {
+        const dimensions =
+          parseScreenshotSizes(screenshot.sizes) || (await loadScreenshotDimensions(screenshot.src))
+
+        if (!isRicherInstallScreenshotSize(dimensions)) return null
+
+        const type = screenshot.type || inferImageMimeType(screenshot.src)
+        if (!isRicherInstallScreenshotType(type)) return null
+
+        return {
+          screenshot: {
+            ...screenshot,
+            sizes: `${dimensions.width}x${dimensions.height}`,
+            ...(type ? { type } : {}),
+            form_factor: 'narrow',
+          },
+          aspectRatio: getScreenshotAspectRatioKey(dimensions),
+        }
+      }),
+    )
+  ).filter(Boolean)
+
+  const groups = new Map()
+
+  candidates.forEach((candidate) => {
+    const group = groups.get(candidate.aspectRatio) || []
+    group.push(candidate.screenshot)
+    groups.set(candidate.aspectRatio, group)
+  })
+
+  const preparedScreenshots = [...groups.values()].sort((left, right) => right.length - left.length)[0] || []
+
+  if (preparedScreenshots.length) return preparedScreenshots
+
+  return DEFAULT_INSTALL_SCREENSHOTS.map((screenshot) => ({ ...screenshot }))
 }
 
 function normalizeManifestOverrides(overrides = {}) {
@@ -856,7 +1004,13 @@ async function fetchPwaManifestResponse(manifestUrl, version = Date.now()) {
 async function storePwaManifest(manifest, configUrl, options = {}) {
   const fetchedAt = Number.isFinite(options.fetchedAt) && options.fetchedAt > 0 ? options.fetchedAt : Date.now()
   const manifestUrl = normalizeManifestUrl(configUrl)
-  const dynamicManifestHref = await cacheDynamicManifest(manifest, fetchedAt)
+  const richerInstallScreenshots = await prepareRicherInstallScreenshots(manifest.screenshots)
+  const installManifest = {
+    ...manifest,
+    description: normalizeDescriptionValue(manifest.description) || DEFAULT_INSTALL_DESCRIPTION,
+    screenshots: richerInstallScreenshots,
+  }
+  const dynamicManifestHref = await cacheDynamicManifest(installManifest, fetchedAt)
   const remoteManifestHref = createVersionedManifestHref(manifestUrl, fetchedAt) || manifestUrl
   const manifestHref = dynamicManifestHref || remoteManifestHref
 
@@ -864,7 +1018,7 @@ async function storePwaManifest(manifest, configUrl, options = {}) {
     schemaVersion: MANIFEST_INFO_SCHEMA_VERSION,
     configUrl: manifestUrl,
     manifestHref,
-    manifest,
+    manifest: installManifest,
     fetchedAt,
   }
 

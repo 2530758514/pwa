@@ -44,22 +44,80 @@ function pickFirstQueryValue(...values) {
   return ''
 }
 
-function normalizeCarousel(value) {
+function normalizeCarouselItems(value) {
   if (typeof value === 'string') {
     return value
       .split(',')
-      .map((item) => normalizeUrl(item))
+      .map((item) => item.trim())
       .filter(Boolean)
   }
 
-  if (!Array.isArray(value)) return []
+  return Array.isArray(value) ? value : []
+}
 
-  return value
+function pickCarouselSource(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value
+    if (Array.isArray(value) && value.length) return value
+  }
+
+  return []
+}
+
+function normalizeCarousel(value) {
+  return normalizeCarouselItems(value)
     .map((item) => {
       if (typeof item === 'string') return normalizeUrl(item)
       if (!item || typeof item !== 'object') return ''
 
       return normalizeUrl(item.url || item.src || item.image || item.image_url || item.imageUrl)
+    })
+    .filter(Boolean)
+}
+
+function normalizeScreenshotSizes(item = {}) {
+  const sizes = String(item.sizes || item.size || '').trim()
+  if (sizes) return sizes
+
+  const width = Number(item.width || item.image_width || item.imageWidth)
+  const height = Number(item.height || item.image_height || item.imageHeight)
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return ''
+  }
+
+  return `${Math.round(width)}x${Math.round(height)}`
+}
+
+function normalizeManifestScreenshots(value) {
+  return normalizeCarouselItems(value)
+    .map((item) => {
+      const src =
+        typeof item === 'string'
+          ? normalizeUrl(item)
+          : normalizeUrl(item?.url || item?.src || item?.image || item?.image_url || item?.imageUrl)
+
+      if (!src) return null
+
+      if (typeof item === 'string') {
+        return {
+          src,
+          form_factor: 'narrow',
+        }
+      }
+
+      const sizes = normalizeScreenshotSizes(item)
+      const type = String(item.type || item.mime_type || item.mimeType || '').trim()
+      const formFactor = String(item.form_factor || item.formFactor || 'narrow').trim()
+      const label = String(item.label || item.title || '').trim()
+
+      return {
+        src,
+        ...(sizes ? { sizes } : {}),
+        ...(type ? { type } : {}),
+        form_factor: formFactor || 'narrow',
+        ...(label ? { label } : {}),
+      }
     })
     .filter(Boolean)
 }
@@ -134,9 +192,14 @@ export function normalizePwaInfo(response = {}) {
           ? payload.manufacturer.trim()
           : ''
   const logo = normalizeUrl(payload.icon || payload.logo || payload.pwa_logo || payload.pwaLogo)
-  const carousel = normalizeCarousel(
-    localizedPayload.screenshots || payload.pwa_carousel || payload.pwaCarousel || localizedPayload.images,
+  const carouselSource = pickCarouselSource(
+    localizedPayload.screenshots,
+    payload.pwa_carousel,
+    payload.pwaCarousel,
+    localizedPayload.images,
   )
+  const carousel = normalizeCarousel(carouselSource)
+  const manifestScreenshots = normalizeManifestScreenshots(carouselSource)
   const configUrl = normalizeConfigUrl(
     payload.config_url || payload.configUrl || payload.manifest_url || payload.manifestUrl,
   )
@@ -170,7 +233,7 @@ export function normalizePwaInfo(response = {}) {
     pwaLogo: logo,
     pwa_carousel: carousel,
     pwaCarousel: carousel,
-    screenshots: carousel,
+    screenshots: manifestScreenshots,
     downloads: String(localizedPayload.store_downloads || payload.downloads || '').trim(),
     comments: Number.isFinite(comments) ? comments : 0,
     rating: String(

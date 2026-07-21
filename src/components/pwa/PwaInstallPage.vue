@@ -833,8 +833,8 @@ function handlePopupDownload(controller) {
 function requestAndroidNotificationPermission() {
   if (!isAndroidPwaInstallDevice.value) return
 
-  // This stays in the page-entry and CTA paths only. The browser owns the
-  // system confirmation; the shell intentionally renders no custom prompt.
+  // The browser owns the permission UI. The page-entry attempt may be
+  // suppressed without a user gesture, so the install CTA retries it.
   void requestShellNotificationPermission().then((nextPermission) => {
     if (nextPermission === 'granted') {
       void requestShellNotificationSubscription({ pwaInfo: props.pwaInfo })
@@ -847,8 +847,6 @@ onMounted(() => {
     void pwaService.recordAndroidPwaDownloadPageVisit().catch(() => {})
   }
 
-  // Android enters this landing page: make the first native permission attempt.
-  // Browsers may suppress it without a user gesture; the main CTA retries below.
   requestAndroidNotificationPermission()
 
   void prepareInstallPrompt().finally(() => {

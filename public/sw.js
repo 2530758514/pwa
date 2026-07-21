@@ -1,5 +1,5 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v6'
+const SW_VERSION = 'pwa-shell-runtime-v7'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
 const NOTIFICATION_NAVIGATION_CACHE_NAME = 'pwa-shell-notification-navigation-v1'
@@ -18,6 +18,9 @@ const CORE_ASSET_PATHS = [
   STATIC_MANIFEST_PATH,
   '/pwa-icons/icon-192.png',
   '/pwa-icons/icon-512.png',
+  '/pwa-source/install-1.png',
+  '/pwa-source/install-2.png',
+  '/pwa-source/install-3.png',
 ]
 const FALLBACK_MANIFEST = {
   id: '/',
@@ -60,6 +63,29 @@ const FALLBACK_MANIFEST = {
       sizes: '512x512',
       type: 'image/png',
       purpose: 'any maskable',
+    },
+  ],
+  screenshots: [
+    {
+      src: '/pwa-source/install-1.png',
+      sizes: '488x1055',
+      type: 'image/png',
+      form_factor: 'narrow',
+      label: 'Games home screen',
+    },
+    {
+      src: '/pwa-source/install-2.png',
+      sizes: '488x1055',
+      type: 'image/png',
+      form_factor: 'narrow',
+      label: 'Referral bonus screen',
+    },
+    {
+      src: '/pwa-source/install-3.png',
+      sizes: '488x1055',
+      type: 'image/png',
+      form_factor: 'narrow',
+      label: 'Recharge promotion screen',
     },
   ],
   lang: 'en',

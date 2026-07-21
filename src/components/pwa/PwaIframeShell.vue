@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } f
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
-import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import {
@@ -35,7 +34,6 @@ const props = defineProps({
 })
 
 const iframeViewportHeight = shallowRef(FALLBACK_IFRAME_HEIGHT)
-const { requestPermission, requestSubscription } = usePwaShellNotifications()
 const iframeRef = useTemplateRef('iframe')
 const iframeReady = shallowRef(false)
 const pendingNotificationNavigation = shallowRef(null)
@@ -45,12 +43,6 @@ let pendingViewportSync = 0
 const iframeShellStyle = computed(() => ({
   '--pwa-iframe-height': iframeViewportHeight.value,
 }))
-
-function resolveIsAndroidDevice() {
-  if (typeof navigator === 'undefined') return false
-
-  return /Android/i.test(`${navigator.userAgent || ''} ${navigator.platform || ''}`)
-}
 
 function resolveIframeViewportHeight() {
   if (typeof window === 'undefined') return FALLBACK_IFRAME_HEIGHT
@@ -160,21 +152,8 @@ const iframeOrigin = computed(() => {
 
 function handleIframeLoad() {
   iframeReady.value = true
-  requestAndroidNotificationPermission()
   postPendingNotificationNavigation()
   void confirmLoadedIframeNotificationNavigation()
-}
-
-function requestAndroidNotificationPermission() {
-  if (!resolveIsAndroidDevice()) return
-
-  // Android PWA only: there is intentionally no custom prompt or fallback UI.
-  // The browser decides whether the system permission confirmation can be shown.
-  void requestPermission().then((nextPermission) => {
-    if (nextPermission === 'granted') {
-      void requestSubscription({ pwaInfo: props.pwaInfo })
-    }
-  })
 }
 
 function reload() {
@@ -322,7 +301,6 @@ onMounted(() => {
   navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage)
   window.addEventListener('message', handleIframeMessage)
   void syncPendingNotificationNavigation()
-  requestAndroidNotificationPermission()
 })
 
 onUnmounted(() => {

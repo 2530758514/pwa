@@ -42,22 +42,25 @@
   ],
   "screenshots": [
     {
-      "src": "/pwa-source/carousel-1.jpg",
-      "sizes": "390x844",
-      "type": "image/jpeg",
-      "form_factor": "narrow"
+      "src": "/pwa-source/install-1.png",
+      "sizes": "488x1055",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Games home screen"
     },
     {
-      "src": "/pwa-source/carousel-2.jpg",
-      "sizes": "390x844",
-      "type": "image/jpeg",
-      "form_factor": "narrow"
+      "src": "/pwa-source/install-2.png",
+      "sizes": "488x1055",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Referral bonus screen"
     },
     {
-      "src": "/pwa-source/carousel-3.jpg",
-      "sizes": "390x844",
-      "type": "image/jpeg",
-      "form_factor": "narrow"
+      "src": "/pwa-source/install-3.png",
+      "sizes": "488x1055",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Recharge promotion screen"
     }
   ],
   "lang": "en",
