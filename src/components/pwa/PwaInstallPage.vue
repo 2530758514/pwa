@@ -96,6 +96,7 @@ let installProgressTimer = null
 let androidPostInstallAutoOpenStartTimer = null
 let androidPostInstallAutoOpenRetryTimer = null
 let postInstallActionStarted = false
+let hasReportedAndroidPwaInstallCompletion = false
 let openBrowserGuideAutoOpenAttempted = false
 let openBrowserGuideAutoOpenTimer = null
 let openBrowserGuideUserGestureRetryListening = false
@@ -171,11 +172,17 @@ const openBrowserGuideLabel = computed(() =>
     browser: openBrowserGuideName.value,
   }),
 )
+const isPlayNowVisible = computed(
+  () =>
+    !installVisualActive.value &&
+    (postInstallOpenRequested.value ||
+      isInstalled.value ||
+      isStandalone.value ||
+      isApplePwaRedirectDevice.value),
+)
 const installLabel = computed(() => {
   if (installVisualActive.value) return t('pwaPage.install.installingProgress')
-  if (postInstallOpenRequested.value) return t('pwaPage.install.playNow')
-  if (isInstalled.value || isStandalone.value) return t('pwaPage.install.playNow')
-  if (isApplePwaRedirectDevice.value) return t('pwaPage.install.playNow')
+  if (isPlayNowVisible.value) return t('pwaPage.install.playNow')
 
   return t('pwaPage.install.mainCta')
 })
@@ -851,6 +858,14 @@ watch(isInstalled, (installed) => {
 
   clearPostInstallActionTimer()
   schedulePostInstallAction(POST_INSTALL_EVENT_ACTION_DELAY_MS)
+})
+
+watch(isPlayNowVisible, (visible, wasVisible) => {
+  if (!visible || wasVisible || hasReportedAndroidPwaInstallCompletion) return
+  if (!isAndroidPwaInstallDevice.value || !installPromptShown.value) return
+
+  hasReportedAndroidPwaInstallCompletion = true
+  void pwaService.recordAndroidPwaInstallCompletion().catch(() => {})
 })
 
 watch(showOpenBrowserGuide, (visible) => {

@@ -23,4 +23,17 @@ export const pwaApi = {
       },
     )
   },
+  recordAndroidPwaInstallCompletion() {
+    return http.post(
+      '/web_pwa_statistics',
+      {
+        type: 2,
+      },
+      {
+        headers: {
+          'X-Platform': 'android_pwa',
+        },
+      },
+    )
+  },
 }
