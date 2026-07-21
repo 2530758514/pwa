@@ -9,6 +9,10 @@ export const pwaNotificationsApi = {
     })
   },
   subscribe(payload) {
-    return http.post('/web_push_subscribe', payload)
+    return http.post('/web_push_subscribe', payload, {
+      headers: {
+        'X-Platform': 'android_pwa',
+      },
+    })
   },
 }
