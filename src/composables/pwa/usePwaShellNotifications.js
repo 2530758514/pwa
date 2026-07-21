@@ -62,23 +62,6 @@ function encodePublicKey(publicKey) {
   return Uint8Array.from([...rawData].map((character) => character.charCodeAt(0)))
 }
 
-function toUint8Array(value) {
-  if (value instanceof ArrayBuffer) return new Uint8Array(value)
-  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-
-  return null
-}
-
-function isCurrentSubscriptionKey(subscription, publicKey) {
-  const currentKey = toUint8Array(subscription?.options?.applicationServerKey)
-  if (!currentKey) return false
-
-  const nextKey = encodePublicKey(publicKey)
-  if (currentKey.length !== nextKey.length) return false
-
-  return currentKey.every((value, index) => value === nextKey[index])
-}
-
 async function getServiceWorkerRegistration() {
   if (!resolvePushSupport()) return null
 
@@ -208,27 +191,23 @@ async function requestSubscription({ pwaInfo = {} } = {}) {
     await syncSubscriptionState()
 
     if (!isSupported.value) return { outcome: 'unsupported' }
-    const config = await refreshWebPushConfig({ force: true })
-    if (!config.enabled || !config.publicKey) return { outcome: 'missing_public_key' }
-
     const registration = await getServiceWorkerRegistration()
     if (!registration) return { outcome: 'missing_service_worker' }
 
-    let existingSubscription = await registration.pushManager.getSubscription()
-
-    if (existingSubscription && !isCurrentSubscriptionKey(existingSubscription, config.publicKey)) {
-      await existingSubscription.unsubscribe()
-      existingSubscription = null
+    const existingSubscription = await registration.pushManager.getSubscription()
+    if (existingSubscription) {
+      isSubscribed.value = true
+      return { outcome: 'already_subscribed' }
     }
 
-    subscription = existingSubscription
-    if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: encodePublicKey(config.publicKey),
-      })
-      createdSubscription = true
-    }
+    const config = await refreshWebPushConfig()
+    if (!config.enabled || !config.publicKey) return { outcome: 'missing_public_key' }
+
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: encodePublicKey(config.publicKey),
+    })
+    createdSubscription = true
 
     try {
       await pwaNotificationsService.subscribe(subscription, config, {
@@ -283,6 +262,5 @@ export function initializePwaShellNotifications() {
 
   initialized = true
   void syncSubscriptionState()
-  void refreshWebPushConfig()
   registerServiceWorkerMessageListener()
 }
