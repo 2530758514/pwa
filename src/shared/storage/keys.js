@@ -1,4 +1,5 @@
 ﻿export const STORAGE_KEYS = {
+  bigoAttribution: 'BIGO_ATTRIBUTION',
   facebookAttribution: 'FACEBOOK_ATTRIBUTION',
   landingAttribution: 'LANDING_ATTRIBUTION',
   pwaLandingAttribution: 'PWA_LANDING_ATTRIBUTION',

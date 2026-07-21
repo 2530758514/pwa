@@ -14,6 +14,8 @@ import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import { pwaService } from '@/services/pwa'
+import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
+import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
 import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
 import PwaBottomNav from './PwaBottomNav.vue'
@@ -96,7 +98,7 @@ let installProgressTimer = null
 let androidPostInstallAutoOpenStartTimer = null
 let androidPostInstallAutoOpenRetryTimer = null
 let postInstallActionStarted = false
-let hasReportedAndroidPwaInstallCompletion = false
+let androidPwaInstallCompletionRequest = null
 let openBrowserGuideAutoOpenAttempted = false
 let openBrowserGuideAutoOpenTimer = null
 let openBrowserGuideUserGestureRetryListening = false
@@ -342,6 +344,7 @@ function resolvePwaRedirectUrl(url) {
     }
 
     applyPwaIdentityParams(targetUrl.searchParams, props.pwaInfo)
+    appendBigoAttributionParams(targetUrl.searchParams)
 
     if (isApplePwaRedirectDevice.value) {
       targetUrl.searchParams.set(IOS_H5_REDIRECT_PARAM, IOS_H5_REDIRECT_VALUE)
@@ -388,6 +391,17 @@ function clearInstallProgressTimer() {
   installProgressTimer = null
 }
 
+function reportAndroidPwaInstallCompletionOnce() {
+  if (!isAndroidPwaInstallDevice.value) return Promise.resolve()
+  if (androidPwaInstallCompletionRequest) return androidPwaInstallCompletionRequest
+
+  androidPwaInstallCompletionRequest = pwaService
+    .recordAndroidPwaInstallCompletion()
+    .catch(() => null)
+
+  return androidPwaInstallCompletionRequest
+}
+
 function clearAndroidPostInstallAutoOpenTimers() {
   if (typeof window === 'undefined') {
     androidPostInstallAutoOpenStartTimer = null
@@ -420,6 +434,7 @@ function startInstallProgressTimer() {
 
     if (nextPercent >= INSTALL_PROGRESS_MAX_PERCENT) {
       clearInstallProgressTimer()
+      void reportAndroidPwaInstallCompletionOnce()
     }
   }, INSTALL_PROGRESS_STEP_MS)
 }
@@ -482,7 +497,9 @@ function scheduleAndroidPostInstallAutoOpenRetries() {
   clearAndroidPostInstallAutoOpenTimers()
   androidPostInstallAutoOpenStartTimer = window.setTimeout(() => {
     androidPostInstallAutoOpenStartTimer = null
-    startAndroidPostInstallAutoOpenRetries()
+    void reportAndroidPwaInstallCompletionOnce().finally(() => {
+      startAndroidPostInstallAutoOpenRetries()
+    })
   }, ANDROID_POST_INSTALL_AUTO_OPEN_START_MS)
 }
 
@@ -800,6 +817,8 @@ function handlePopupDownload(controller) {
     return
   }
 
+  notifyBigoAppDownload()
+
   if (isApplePwaRedirectDevice.value) {
     redirectToPwaDownload()
     controller?.finish?.({ repeat: false })
@@ -858,14 +877,6 @@ watch(isInstalled, (installed) => {
 
   clearPostInstallActionTimer()
   schedulePostInstallAction(POST_INSTALL_EVENT_ACTION_DELAY_MS)
-})
-
-watch(isPlayNowVisible, (visible, wasVisible) => {
-  if (!visible || wasVisible || hasReportedAndroidPwaInstallCompletion) return
-  if (!isAndroidPwaInstallDevice.value || !installPromptShown.value) return
-
-  hasReportedAndroidPwaInstallCompletion = true
-  void pwaService.recordAndroidPwaInstallCompletion().catch(() => {})
 })
 
 watch(showOpenBrowserGuide, (visible) => {

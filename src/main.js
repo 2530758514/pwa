@@ -3,6 +3,11 @@ import './style.css'
 import App from './App.vue'
 import { initializePwaInstallPromptListeners } from './composables/pwa/usePwaInstallPrompt'
 import { initializePwaShellNotifications } from './composables/pwa/usePwaShellNotifications'
+import {
+  captureBigoAttribution,
+  getStoredBigoPixelId,
+} from './shared/analytics/bigoAttribution'
+import bigoPixelManager from './shared/analytics/bigoPixel'
 import { initializePwaDisplayModeClasses } from './shared/pwa/displayMode'
 import { applyStoredPwaManifestUrl } from './shared/pwa/manifest'
 
@@ -17,6 +22,8 @@ if (shouldEnableVConsole) {
     .catch(() => {})
 }
 
+const bigoAttribution = captureBigoAttribution()
+bigoPixelManager.init({ pixelId: bigoAttribution?.pixelId || getStoredBigoPixelId() })
 initializePwaDisplayModeClasses()
 applyStoredPwaManifestUrl()
 initializePwaInstallPromptListeners()

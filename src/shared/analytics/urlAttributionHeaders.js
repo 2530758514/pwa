@@ -3,6 +3,12 @@ import { storage } from '@/shared/storage/storage'
 
 const URL_ATTRIBUTION_HEADER = 'X-Landing-Params'
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+const DEDICATED_ATTRIBUTION_HEADER_PARAMS = new Set([
+  'bbg',
+  'bigo_click_id',
+  'bigo_pixel_id',
+  'pixel_id',
+])
 
 function hasBrowserRuntime() {
   return typeof window !== 'undefined'
@@ -92,6 +98,7 @@ export function appendUrlAttributionHeaders(headers = {}) {
     const normalizedValue = normalizeValue(value)
 
     if (!normalizedKey || !normalizedValue || !HEADER_NAME_PATTERN.test(normalizedKey)) return
+    if (DEDICATED_ATTRIBUTION_HEADER_PARAMS.has(normalizedKey.toLowerCase())) return
     if (headers[normalizedKey]) return
 
     headers[normalizedKey] = normalizedValue

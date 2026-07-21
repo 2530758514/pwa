@@ -1,5 +1,6 @@
 ﻿import { STORAGE_KEYS } from '@/shared/storage/keys'
 import { storage } from '@/shared/storage/storage'
+import { clearBigoAttribution } from '@/shared/analytics/bigoAttribution'
 
 const URL_ATTRIBUTION_PARAM_ALIASES = {
   fbclid: ['fbclid', 'pixelId'],
@@ -106,6 +107,10 @@ export function persistFacebookAttribution(attribution = {}) {
   const normalizedFbp = normalizeClickId(attribution.fbp)
   const normalizedFbc = normalizeClickId(attribution.fbc)
   const normalizedEventSourceUrl = normalizeClickId(attribution.event_source_url)
+
+  if (normalizedFbclid && getUrlAttributionParam(URL_ATTRIBUTION_PARAM_ALIASES.fbclid)) {
+    clearBigoAttribution()
+  }
 
   if (normalizedFbclid) writeLocalStorage('fbclid', normalizedFbclid)
   if (normalizedFbp) writeLocalStorage('fbp', normalizedFbp)

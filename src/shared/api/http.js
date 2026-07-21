@@ -2,6 +2,7 @@
 import { API_BASE_URL } from '@/shared/config/env'
 import { appendFrontendOriginHeader } from '@/shared/api/originHeader'
 import { appendOsHeader } from '@/shared/api/osHeader'
+import { appendBigoAttributionHeaders } from '@/shared/analytics/bigoAttribution'
 import { appendFacebookAttributionHeaders } from '@/shared/analytics/facebookAttribution'
 import { appendUrlAttributionHeaders } from '@/shared/analytics/urlAttributionHeaders'
 
@@ -60,6 +61,7 @@ http.interceptors.request.use((config) => {
   config.headers = appendOsHeader(appendFrontendOriginHeader(config.headers || {}))
   appendFacebookAttributionHeaders(config.headers)
   appendUrlAttributionHeaders(config.headers)
+  appendBigoAttributionHeaders(config.headers)
 
   return config
 })

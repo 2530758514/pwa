@@ -4,6 +4,7 @@ import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
+import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import {
   H5_NOTIFICATION_NAVIGATE,
@@ -100,6 +101,7 @@ function resolveIframeUrl(sourceUrl, pwaInfo = {}) {
     }
 
     applyPwaIdentityParams(targetUrl.searchParams, pwaInfo)
+    appendBigoAttributionParams(targetUrl.searchParams)
     applyPwaAppOpenParam(targetUrl.searchParams)
 
     return targetUrl.toString()
