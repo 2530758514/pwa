@@ -1,5 +1,6 @@
 import { computed, readonly, shallowRef } from 'vue'
 import { pwaNotificationsService } from '@/services/pwaNotifications'
+import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
 
 const SERVICE_WORKER_URL = '/sw.js'
 const EMPTY_WEB_PUSH_CONFIG = Object.freeze({
@@ -18,6 +19,10 @@ const configLoading = shallowRef(false)
 let initialized = false
 let configLoaded = false
 let configRequest = null
+const permissionPromptAttempts = new Set()
+let pendingPermissionRequest = null
+let notificationPermissionStatus = null
+let permissionStateListenersRegistered = false
 let serviceWorkerMessageListenerRegistered = false
 
 function isTopLevelWindow() {
@@ -121,31 +126,81 @@ async function refreshWebPushConfig({ force = false } = {}) {
   return configRequest
 }
 
-function requestSystemPermission() {
+function resolvePermissionPromptKey(promptKey) {
+  return String(promptKey || 'default').trim() || 'default'
+}
+
+function requestSystemPermission({ promptKey, allowStandalone = false } = {}) {
   isSupported.value = resolvePushSupport()
   permission.value = resolveNotificationPermission()
 
   if (!isSupported.value) return Promise.resolve('unsupported')
   if (permission.value !== 'default') return Promise.resolve(permission.value)
+  if (resolveIsPwaStandalone() && !allowStandalone) return Promise.resolve(permission.value)
+  if (pendingPermissionRequest) return pendingPermissionRequest
+  const resolvedPromptKey = resolvePermissionPromptKey(promptKey)
+  if (permissionPromptAttempts.has(resolvedPromptKey)) return Promise.resolve(permission.value)
 
-  // Keep the browser call before the first await so it also remains valid when
-  // Android accepts it from a direct user interaction.
-  const permissionRequest = Notification.requestPermission()
+  permissionPromptAttempts.add(resolvedPromptKey)
+  let nativePermissionRequest = null
 
-  return Promise.resolve(permissionRequest).then((nextPermission) => {
-    permission.value = nextPermission
-    return nextPermission
-  })
+  try {
+    nativePermissionRequest = Notification.requestPermission()
+  } catch {
+    permission.value = resolveNotificationPermission()
+    return Promise.resolve(permission.value)
+  }
+
+  // Keep the browser call before the first await so the request remains inside
+  // the user's click activation. Reuse the same promise while it is pending.
+  pendingPermissionRequest = Promise.resolve(nativePermissionRequest)
+    .then((nextPermission) => {
+      permission.value = nextPermission || resolveNotificationPermission()
+      return permission.value
+    })
+    .catch(() => {
+      permission.value = resolveNotificationPermission()
+      return permission.value
+    })
+    .finally(() => {
+      pendingPermissionRequest = null
+    })
+
+  return pendingPermissionRequest
 }
 
-function requestPermission() {
-  const permissionRequest = requestSystemPermission()
+function requestPermission(options = {}) {
+  const permissionRequest = requestSystemPermission(options)
 
   void permissionRequest.then(() => {
     void syncSubscriptionState()
   })
 
   return permissionRequest
+}
+
+function handleDocumentVisibilityChange() {
+  if (document.visibilityState !== 'visible') return
+
+  void syncSubscriptionState()
+}
+
+async function registerPermissionStateListeners() {
+  if (permissionStateListenersRegistered || !resolvePushSupport()) return
+
+  permissionStateListenersRegistered = true
+  window.addEventListener('pageshow', syncSubscriptionState)
+  window.addEventListener('focus', syncSubscriptionState)
+  document.addEventListener('visibilitychange', handleDocumentVisibilityChange)
+
+  if (!navigator.permissions?.query) return
+
+  try {
+    notificationPermissionStatus = await navigator.permissions.query({ name: 'notifications' })
+    notificationPermissionStatus.addEventListener?.('change', syncSubscriptionState)
+  } catch {
+    notificationPermissionStatus = null
+  }
 }
 
 function handleServiceWorkerMessage(event) {
@@ -262,5 +317,6 @@ export function initializePwaShellNotifications() {
 
   initialized = true
   void syncSubscriptionState()
+  void registerPermissionStateListeners()
   registerServiceWorkerMessageListener()
 }

@@ -141,7 +141,7 @@ const effectiveShowQrCode = computed(() => showQrCode.value && qrCodeEnabled.val
 const isApplePwaRedirectDevice = computed(() => resolveIsAppleDevice())
 const isAndroidPwaInstallDevice = computed(() => resolveIsAndroidDevice())
 const {
-  requestPermission: requestShellNotificationPermission,
+  permission: shellNotificationPermission,
   requestSubscription: requestShellNotificationSubscription,
 } = usePwaShellNotifications()
 const isInAppBrowser = computed(() => resolveIsInAppBrowser())
@@ -794,8 +794,9 @@ async function runNativeInstallPrompt() {
 }
 
 function handlePopupDownload(controller) {
-  if (installing.value || installVisualActive.value) return
   if (isStandalone.value) return
+
+  if (installing.value || installVisualActive.value) return
 
   if (postInstallOpenRequested.value) {
     silentlyTryOpenInstalledPwa()
@@ -808,8 +809,6 @@ function handlePopupDownload(controller) {
     controller?.finish?.({ repeat: false })
     return
   }
-
-  requestAndroidNotificationPermission()
 
   if (shouldUseOpenBrowserGuide.value) {
     openExternalBrowserGuide({ autoOpen: shouldLockOpenBrowserGuide.value })
@@ -830,24 +829,10 @@ function handlePopupDownload(controller) {
   })
 }
 
-function requestAndroidNotificationPermission() {
-  if (!isAndroidPwaInstallDevice.value) return
-
-  // The browser owns the permission UI. The page-entry attempt may be
-  // suppressed without a user gesture, so the install CTA retries it.
-  void requestShellNotificationPermission().then((nextPermission) => {
-    if (nextPermission === 'granted') {
-      void requestShellNotificationSubscription({ pwaInfo: props.pwaInfo })
-    }
-  })
-}
-
 onMounted(() => {
   if (isAndroidPwaInstallDevice.value) {
     void pwaService.recordAndroidPwaDownloadPageVisit().catch(() => {})
   }
-
-  requestAndroidNotificationPermission()
 
   void prepareInstallPrompt().finally(() => {
     installPromptProbeFinished.value = true
@@ -876,6 +861,24 @@ watch(isInstalled, (installed) => {
   clearPostInstallActionTimer()
   schedulePostInstallAction(POST_INSTALL_EVENT_ACTION_DELAY_MS)
 })
+
+watch(
+  shellNotificationPermission,
+  (nextPermission) => {
+    if (
+      nextPermission !== 'granted' ||
+      !isAndroidPwaInstallDevice.value ||
+      isStandalone.value
+    ) {
+      return
+    }
+
+    // H5 never requests permission. If the browser already reports it as
+    // granted, only ensure the existing origin has a push subscription.
+    void requestShellNotificationSubscription({ pwaInfo: props.pwaInfo })
+  },
+  { immediate: true },
+)
 
 watch(showOpenBrowserGuide, (visible) => {
   if (visible) {

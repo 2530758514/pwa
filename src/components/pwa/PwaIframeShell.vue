@@ -4,6 +4,7 @@ import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
+import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import {
   H5_NOTIFICATION_NAVIGATE,
@@ -34,6 +35,7 @@ const props = defineProps({
 })
 
 const iframeViewportHeight = shallowRef(FALLBACK_IFRAME_HEIGHT)
+const { requestPermission, requestSubscription } = usePwaShellNotifications()
 const iframeRef = useTemplateRef('iframe')
 const iframeReady = shallowRef(false)
 const pendingNotificationNavigation = shallowRef(null)
@@ -43,6 +45,27 @@ let pendingViewportSync = 0
 const iframeShellStyle = computed(() => ({
   '--pwa-iframe-height': iframeViewportHeight.value,
 }))
+
+function resolveIsAndroidDevice() {
+  if (typeof navigator === 'undefined') return false
+
+  return /Android/i.test(`${navigator.userAgent || ''} ${navigator.platform || ''}`)
+}
+
+function requestAndroidNotificationPermission() {
+  if (!resolveIsAndroidDevice()) return
+
+  // Android standalone PWA only: request the browser/system permission
+  // directly, without displaying a custom explanation or guide popup.
+  void requestPermission({
+    promptKey: 'standalone-entry',
+    allowStandalone: true,
+  }).then((nextPermission) => {
+    if (nextPermission === 'granted') {
+      void requestSubscription({ pwaInfo: props.pwaInfo })
+    }
+  })
+}
 
 function resolveIframeViewportHeight() {
   if (typeof window === 'undefined') return FALLBACK_IFRAME_HEIGHT
@@ -301,6 +324,7 @@ onMounted(() => {
   navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage)
   window.addEventListener('message', handleIframeMessage)
   void syncPendingNotificationNavigation()
+  requestAndroidNotificationPermission()
 })
 
 onUnmounted(() => {
