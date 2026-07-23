@@ -107,6 +107,9 @@ export const pwaService = {
   recordAndroidPwaInstallCompletion() {
     return pwaApi.recordAndroidPwaInstallCompletion()
   },
+  recordAndroidPwaNotificationClick() {
+    return pwaApi.recordAndroidPwaNotificationClick()
+  },
   async getPwaInfo(params = {}, options = {}) {
     const requestKey = getPwaManifestRequestKey(params, { detail: true })
 

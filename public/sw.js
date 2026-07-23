@@ -1,5 +1,5 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v7'
+const SW_VERSION = 'pwa-shell-runtime-v8'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
 const NOTIFICATION_NAVIGATION_CACHE_NAME = 'pwa-shell-notification-navigation-v1'
@@ -266,8 +266,6 @@ function handleNotificationPayload(payload, source = 'push') {
 function createNotificationNavigation(redirect) {
   const safeRedirect = normalizeRedirect(redirect)
 
-  if (!safeRedirect) return null
-
   const navigationId =
     typeof crypto?.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -275,7 +273,7 @@ function createNotificationNavigation(redirect) {
 
   return {
     id: navigationId,
-    url: new URL(safeRedirect, self.location.origin).toString(),
+    url: safeRedirect ? new URL(safeRedirect, self.location.origin).toString() : '',
   }
 }
 

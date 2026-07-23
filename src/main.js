@@ -10,6 +10,7 @@ import {
 import bigoPixelManager from './shared/analytics/bigoPixel'
 import { initializePwaDisplayModeClasses } from './shared/pwa/displayMode'
 import { applyStoredPwaManifestUrl } from './shared/pwa/manifest'
+import { initializePwaNotificationClickTracking } from './services/pwaNotificationClickTracking'
 
 const shouldEnableVConsole =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_VCONSOLE === 'true'
@@ -28,6 +29,7 @@ initializePwaDisplayModeClasses()
 applyStoredPwaManifestUrl()
 initializePwaInstallPromptListeners()
 initializePwaShellNotifications()
+initializePwaNotificationClickTracking()
 
 const canUseServiceWorker =
   'serviceWorker' in navigator && (window.isSecureContext || import.meta.env.PROD)

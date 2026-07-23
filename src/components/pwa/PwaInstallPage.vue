@@ -12,7 +12,6 @@ import {
 import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
-import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
@@ -140,10 +139,6 @@ const qrCodeEnabled = computed(() => Number(props.pwaInfo?.qr_code_enabled ?? 1)
 const effectiveShowQrCode = computed(() => showQrCode.value && qrCodeEnabled.value)
 const isApplePwaRedirectDevice = computed(() => resolveIsAppleDevice())
 const isAndroidPwaInstallDevice = computed(() => resolveIsAndroidDevice())
-const {
-  permission: shellNotificationPermission,
-  requestSubscription: requestShellNotificationSubscription,
-} = usePwaShellNotifications()
 const isInAppBrowser = computed(() => resolveIsInAppBrowser())
 const isFacebookInAppBrowser = computed(() => resolveIsFacebookInAppBrowser())
 const isLockedInAppBrowser = computed(() => resolveIsLockedInAppBrowser())
@@ -861,24 +856,6 @@ watch(isInstalled, (installed) => {
   clearPostInstallActionTimer()
   schedulePostInstallAction(POST_INSTALL_EVENT_ACTION_DELAY_MS)
 })
-
-watch(
-  shellNotificationPermission,
-  (nextPermission) => {
-    if (
-      nextPermission !== 'granted' ||
-      !isAndroidPwaInstallDevice.value ||
-      isStandalone.value
-    ) {
-      return
-    }
-
-    // H5 never requests permission. If the browser already reports it as
-    // granted, only ensure the existing origin has a push subscription.
-    void requestShellNotificationSubscription({ pwaInfo: props.pwaInfo })
-  },
-  { immediate: true },
-)
 
 watch(showOpenBrowserGuide, (visible) => {
   if (visible) {

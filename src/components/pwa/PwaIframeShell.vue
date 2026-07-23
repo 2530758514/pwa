@@ -35,12 +35,17 @@ const props = defineProps({
 })
 
 const iframeViewportHeight = shallowRef(FALLBACK_IFRAME_HEIGHT)
-const { requestPermission, requestSubscription } = usePwaShellNotifications()
+const {
+  permission: notificationPermission,
+  requestPermission,
+  requestSubscription,
+} = usePwaShellNotifications()
 const iframeRef = useTemplateRef('iframe')
 const iframeReady = shallowRef(false)
 const pendingNotificationNavigation = shallowRef(null)
 const activeNotificationLocation = shallowRef('')
 let pendingViewportSync = 0
+let androidPermissionGrantHandled = false
 
 const iframeShellStyle = computed(() => ({
   '--pwa-iframe-height': iframeViewportHeight.value,
@@ -55,15 +60,24 @@ function resolveIsAndroidDevice() {
 function requestAndroidNotificationPermission() {
   if (!resolveIsAndroidDevice()) return
 
+  const shouldHandlePermissionGrant = notificationPermission.value === 'default'
+
   // Android standalone PWA only: request the browser/system permission
   // directly, without displaying a custom explanation or guide popup.
   void requestPermission({
     promptKey: 'standalone-entry',
     allowStandalone: true,
   }).then((nextPermission) => {
-    if (nextPermission === 'granted') {
-      void requestSubscription({ pwaInfo: props.pwaInfo })
+    if (
+      nextPermission !== 'granted' ||
+      !shouldHandlePermissionGrant ||
+      androidPermissionGrantHandled
+    ) {
+      return
     }
+
+    androidPermissionGrantHandled = true
+    void requestSubscription({ pwaInfo: props.pwaInfo })
   })
 }
 
@@ -189,7 +203,14 @@ function postPendingNotificationNavigation() {
   const iframeWindow = iframeRef.value?.contentWindow
   const navigation = pendingNotificationNavigation.value
 
-  if (!iframeReady.value || !iframeWindow || !iframeOrigin.value || !navigation) return
+  if (
+    !iframeReady.value ||
+    !iframeWindow ||
+    !iframeOrigin.value ||
+    !navigation?.location
+  ) {
+    return
+  }
 
   const targetUrl = new URL(navigation.location, iframeOrigin.value)
 

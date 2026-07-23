@@ -17,9 +17,18 @@ function getNavigationRequest() {
 }
 
 export function normalizeNotificationNavigation(payload) {
-  if (!payload || typeof payload.id !== 'string' || typeof payload.url !== 'string') {
+  if (!payload || typeof payload.id !== 'string') {
     return null
   }
+
+  if (!payload.url) {
+    return {
+      id: payload.id,
+      location: '',
+    }
+  }
+
+  if (typeof payload.url !== 'string') return null
 
   try {
     const targetUrl = new URL(payload.url, window.location.origin)

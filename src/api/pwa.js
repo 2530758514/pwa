@@ -36,4 +36,17 @@ export const pwaApi = {
       },
     )
   },
+  recordAndroidPwaNotificationClick() {
+    return http.post(
+      '/web_pwa_statistics',
+      {
+        type: 4,
+      },
+      {
+        headers: {
+          'X-Platform': 'android_pwa',
+        },
+      },
+    )
+  },
 }
