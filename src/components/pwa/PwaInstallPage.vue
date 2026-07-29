@@ -140,19 +140,14 @@ const effectiveShowQrCode = computed(() => showQrCode.value && qrCodeEnabled.val
 const isApplePwaRedirectDevice = computed(() => resolveIsAppleDevice())
 const isAndroidPwaInstallDevice = computed(() => resolveIsAndroidDevice())
 const isInAppBrowser = computed(() => resolveIsInAppBrowser())
-const isFacebookInAppBrowser = computed(() => resolveIsFacebookInAppBrowser())
 const isLockedInAppBrowser = computed(() => resolveIsLockedInAppBrowser())
 const isMobileExternalBrowserGuideDevice = computed(
   () => isAndroidPwaInstallDevice.value || isApplePwaRedirectDevice.value,
-)
-const shouldSkipOpenBrowserGuide = computed(
-  () => isApplePwaRedirectDevice.value && isFacebookInAppBrowser.value,
 )
 const shouldUseOpenBrowserGuide = computed(
   () =>
     isMobileExternalBrowserGuideDevice.value &&
     isInAppBrowser.value &&
-    !shouldSkipOpenBrowserGuide.value &&
     !isInstalled.value &&
     !isStandalone.value,
 )
@@ -268,21 +263,15 @@ function resolveIsInAppBrowser() {
 
   const userAgent = navigator.userAgent || ''
 
-  return /Lark|Feishu|LarkLocale|FBAN|FBAV|FB_IAB|Instagram|Line|MicroMessenger|DingTalk|Twitter|WhatsApp/i.test(
+  return /Lark|Feishu|LarkLocale|Instagram|Line|MicroMessenger|DingTalk|Twitter|WhatsApp/i.test(
     userAgent,
   )
-}
-
-function resolveIsFacebookInAppBrowser() {
-  if (typeof navigator === 'undefined') return false
-
-  return /FBAN|FBAV|FB_IAB/i.test(navigator.userAgent || '')
 }
 
 function resolveIsLockedInAppBrowser() {
   if (typeof navigator === 'undefined') return false
 
-  return /Lark|Feishu|LarkLocale|FBAN|FBAV|FB_IAB/i.test(navigator.userAgent || '')
+  return /Lark|Feishu|LarkLocale/i.test(navigator.userAgent || '')
 }
 
 function syncQrCodeVisibility() {

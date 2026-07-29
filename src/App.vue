@@ -1,5 +1,6 @@
 ﻿<script setup>
 import { onMounted, onUnmounted, shallowRef } from 'vue'
+import PwaFacebookBrowserGate from '@/components/pwa/PwaFacebookBrowserGate.vue'
 import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
 import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
@@ -35,4 +36,5 @@ onUnmounted(() => {
     :loading-info="loading"
     :load-pwa-info="loadPwaInfo"
   />
+  <PwaFacebookBrowserGate v-if="!isStandalone" />
 </template>
