@@ -58,9 +58,11 @@ const ANDROID_POST_INSTALL_AUTO_OPEN_INTERVAL_MS = 1000
 const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
+const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
 const OPEN_BROWSER_USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
+const OPEN_BROWSER_COPY_ACTION_SELECTOR = '[data-pwa-browser-guide-copy-action]'
 const IOS_H5_REDIRECT_PARAM = 'pwa_ios_h5_redirect'
 const IOS_H5_REDIRECT_VALUE = '1'
 
@@ -97,6 +99,8 @@ let installProgressTimer = null
 let androidPostInstallAutoOpenStartTimer = null
 let androidPostInstallAutoOpenRetryTimer = null
 let postInstallActionStarted = false
+let installedOpenPopupPending = false
+let installedOpenPopupDueAt = 0
 let androidPwaInstallCompletionRequest = null
 let openBrowserGuideAutoOpenAttempted = false
 let openBrowserGuideAutoOpenTimer = null
@@ -349,6 +353,7 @@ function redirectToPwaDownload() {
 function startInstallVisualState() {
   postInstallOpenRequested.value = false
   postInstallActionStarted = false
+  clearPendingInstalledOpenPopup()
   installVisualActive.value = true
   startInstallProgressTimer()
 }
@@ -373,6 +378,58 @@ function clearInstallProgressTimer() {
 
   window.clearInterval(installProgressTimer)
   installProgressTimer = null
+}
+
+function readPendingInstalledOpenPopup() {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const state = JSON.parse(
+      window.sessionStorage.getItem(INSTALLED_OPEN_POPUP_SESSION_KEY) || 'null',
+    )
+    const dueAt = Number(state?.dueAt)
+
+    if (!Number.isFinite(dueAt) || dueAt <= 0) {
+      window.sessionStorage.removeItem(INSTALLED_OPEN_POPUP_SESSION_KEY)
+      return null
+    }
+
+    return { dueAt }
+  } catch {
+    return null
+  }
+}
+
+function persistPendingInstalledOpenPopup() {
+  if (
+    typeof window === 'undefined' ||
+    !installedOpenPopupPending ||
+    !installedOpenPopupDueAt
+  ) {
+    return
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      INSTALLED_OPEN_POPUP_SESSION_KEY,
+      JSON.stringify({ dueAt: installedOpenPopupDueAt }),
+    )
+  } catch {
+    // Keep the in-memory fallback when session storage is unavailable.
+  }
+}
+
+function clearPendingInstalledOpenPopup() {
+  installedOpenPopupPending = false
+  installedOpenPopupDueAt = 0
+
+  if (typeof window === 'undefined') return
+
+  try {
+    window.sessionStorage.removeItem(INSTALLED_OPEN_POPUP_SESSION_KEY)
+  } catch {
+    // The in-memory state is already cleared.
+  }
 }
 
 function reportAndroidPwaInstallCompletionOnce() {
@@ -430,9 +487,12 @@ function shouldShowInstalledOpenPopup() {
 }
 
 function openInstalledOpenPopup() {
-  if (!shouldShowInstalledOpenPopup()) return
+  if (!shouldShowInstalledOpenPopup()) return false
 
   showInstalledOpenPopup.value = true
+  postInstallActionStarted = true
+  clearPendingInstalledOpenPopup()
+  return true
 }
 
 function resolvePostInstallActionDelay(delay) {
@@ -481,9 +541,8 @@ function scheduleAndroidPostInstallAutoOpenRetries() {
   clearAndroidPostInstallAutoOpenTimers()
   androidPostInstallAutoOpenStartTimer = window.setTimeout(() => {
     androidPostInstallAutoOpenStartTimer = null
-    void reportAndroidPwaInstallCompletionOnce().finally(() => {
-      startAndroidPostInstallAutoOpenRetries()
-    })
+    void reportAndroidPwaInstallCompletionOnce()
+    startAndroidPostInstallAutoOpenRetries()
   }, ANDROID_POST_INSTALL_AUTO_OPEN_START_MS)
 }
 
@@ -491,28 +550,68 @@ function runPostInstallAction() {
   clearPostInstallActionTimer()
   clearAndroidPostInstallAutoOpenTimers()
 
-  if (postInstallActionStarted || isStandalone.value) return
+  if (postInstallActionStarted) return
 
-  postInstallActionStarted = true
+  if (isStandalone.value) {
+    clearPendingInstalledOpenPopup()
+    return
+  }
+
   clearInstallProgressTimer()
   installProgressPercent.value = INSTALL_PROGRESS_MAX_PERCENT
+  installedOpenPopupPending = true
+  persistPendingInstalledOpenPopup()
 
   openInstalledOpenPopup()
 }
 
-function schedulePostInstallAction(delay) {
+function schedulePostInstallAction(delay, options = {}) {
   if (typeof window === 'undefined' || isStandalone.value) return
 
+  const requestedDueAt = Number(options.dueAt)
+  const dueAt =
+    Number.isFinite(requestedDueAt) && requestedDueAt > 0
+      ? requestedDueAt
+      : Date.now() + resolvePostInstallActionDelay(delay)
+
   clearPostInstallActionTimer()
+  installedOpenPopupPending = true
+  installedOpenPopupDueAt = dueAt
+  persistPendingInstalledOpenPopup()
   postInstallActionTimer = window.setTimeout(() => {
     postInstallActionTimer = null
     runPostInstallAction()
-  }, resolvePostInstallActionDelay(delay))
+  }, Math.max(0, dueAt - Date.now()))
+}
+
+function restorePendingInstalledOpenPopup() {
+  if (isStandalone.value) {
+    clearPendingInstalledOpenPopup()
+    return
+  }
+
+  const state = readPendingInstalledOpenPopup()
+  if (!state) return
+
+  installPromptShown.value = true
+  installVisualActive.value = true
+  installProgressPercent.value = INSTALL_PROGRESS_MAX_PERCENT
+  schedulePostInstallAction(undefined, { dueAt: state.dueAt })
+}
+
+function handlePostInstallPageVisible() {
+  if (typeof document === 'undefined' || document.visibilityState === 'hidden') return
+  if (!installedOpenPopupPending || postInstallActionStarted) return
+
+  if (Date.now() >= installedOpenPopupDueAt) {
+    runPostInstallAction()
+  }
 }
 
 function handleInstalledOpen() {
   showInstalledOpenPopup.value = false
   postInstallOpenRequested.value = true
+  clearPendingInstalledOpenPopup()
   resetInstallLoadingState()
   silentlyTryOpenInstalledPwa()
 }
@@ -520,6 +619,7 @@ function handleInstalledOpen() {
 function handleInstalledDesktopOpen() {
   showInstalledOpenPopup.value = false
   postInstallOpenRequested.value = true
+  clearPendingInstalledOpenPopup()
   resetInstallLoadingState()
 }
 
@@ -591,8 +691,9 @@ function autoOpenCurrentPageInExternalBrowser() {
   openCurrentPageInExternalBrowser()
 }
 
-function handleOpenBrowserUserGestureRetry() {
+function handleOpenBrowserUserGestureRetry(event) {
   if (!shouldLockOpenBrowserGuide.value || !showOpenBrowserGuide.value) return
+  if (event?.target?.closest?.(OPEN_BROWSER_COPY_ACTION_SELECTOR)) return
 
   autoOpenCurrentPageInExternalBrowser()
 }
@@ -814,6 +915,10 @@ function handlePopupDownload(controller) {
 }
 
 onMounted(() => {
+  document.addEventListener('visibilitychange', handlePostInstallPageVisible)
+  window.addEventListener('pageshow', handlePostInstallPageVisible)
+  restorePendingInstalledOpenPopup()
+
   if (isAndroidPwaInstallDevice.value) {
     void pwaService.recordAndroidPwaDownloadPageVisit().catch(() => {})
   }
@@ -829,6 +934,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handlePostInstallPageVisible)
+  window.removeEventListener('pageshow', handlePostInstallPageVisible)
   clearPostInstallActionTimer()
   clearInstallProgressTimer()
   clearAndroidPostInstallAutoOpenTimers()

@@ -63,25 +63,37 @@ function fallbackCopy(text) {
   textarea.style.left = '-9999px'
   textarea.style.top = '-9999px'
   document.body.appendChild(textarea)
+  textarea.focus()
   textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
 
   try {
-    document.execCommand('copy')
-    return true
+    return document.execCommand('copy')
   } finally {
     document.body.removeChild(textarea)
   }
+}
+
+async function writeTextToClipboard(text) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Some in-app browsers expose Clipboard API but block it at runtime.
+    }
+  }
+
+  return fallbackCopy(text)
 }
 
 async function copyCurrentUrl() {
   if (!displayUrl.value) return
 
   try {
-    if (navigator.clipboard?.writeText && window.isSecureContext) {
-      await navigator.clipboard.writeText(displayUrl.value)
-    } else {
-      fallbackCopy(displayUrl.value)
-    }
+    const copied = await writeTextToClipboard(displayUrl.value)
+
+    if (!copied) throw new Error('Copy command was rejected')
 
     showLocalToast(t('pwaPage.browserGuide.copySuccess'))
   } catch {
@@ -140,13 +152,19 @@ function close() {
 
       <input
         class="pwa-open-browser-guide__url"
+        data-pwa-browser-guide-copy-action
         type="text"
         :value="displayUrl"
         readonly
         aria-readonly="true"
       />
 
-      <button type="button" class="pwa-open-browser-guide__copy" @click="copyCurrentUrl">
+      <button
+        type="button"
+        class="pwa-open-browser-guide__copy"
+        data-pwa-browser-guide-copy-action
+        @click="copyCurrentUrl"
+      >
         {{ t('pwaPage.browserGuide.copy') }}
       </button>
     </section>

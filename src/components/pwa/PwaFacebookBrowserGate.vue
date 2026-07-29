@@ -13,6 +13,7 @@ const APPLE_DEVICE_PATTERN = /iPad|iPhone|iPod/i
 const AUTO_OPEN_DELAY_MS = 1000
 const USER_GESTURE_RETRY_THROTTLE_MS = 800
 const USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
+const COPY_ACTION_SELECTOR = '[data-pwa-browser-guide-copy-action]'
 
 function resolveNavigatorValue(key) {
   if (typeof navigator === 'undefined') return ''
@@ -92,8 +93,8 @@ function openCurrentPageInExternalBrowser() {
   window.open(currentUrl, '_blank', 'noopener,noreferrer')
 }
 
-function retryOpenFromUserGesture() {
-  if (!showGuide.value) return
+function retryOpenFromUserGesture(event) {
+  if (!showGuide.value || event?.target?.closest?.(COPY_ACTION_SELECTOR)) return
 
   const attemptedAt = Date.now()
   if (attemptedAt - lastUserGestureAttemptAt < USER_GESTURE_RETRY_THROTTLE_MS) return
