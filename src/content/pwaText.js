@@ -16,7 +16,7 @@
     install: {
       install: 'Install',
       mainCta: 'Rapid Install',
-      playNow: 'Play Now',
+      playNow: 'Play',
       safe: 'Download within 10 seconds',
       installing: 'Opening secure install',
       installingProgress: 'Installing...',
@@ -73,9 +73,9 @@
     installedOpen: {
       title: 'App installed',
       description:
-        '{app} has been added to your home screen. Tap Open to launch it, or return to your home screen and open it there.',
+        '{app} has been added to your home screen. Open the app or continue on the web.',
       open: 'Open App',
-      desktop: 'Open from Home Screen',
+      web: 'Open Web Page',
       close: 'Close open app popup',
     },
     browserGuide: {

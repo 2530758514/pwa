@@ -57,12 +57,26 @@ function createStartUrlLaunchUrl(options = {}) {
   return targetUrl.toString()
 }
 
+function resolveFallbackLaunchUrl(options = {}) {
+  const explicitFallbackUrl = String(options.fallbackUrl || '').trim()
+
+  if (explicitFallbackUrl) {
+    return new URL(explicitFallbackUrl, window.location.href).toString()
+  }
+
+  return createStartUrlLaunchUrl(options)
+}
+
 function createAndroidIntentLaunchUrl(options = {}) {
   const launchUrl = new URL(createStartUrlLaunchUrl(options))
   const scheme = launchUrl.protocol.replace(':', '') || 'https'
   const path = `${launchUrl.host}${launchUrl.pathname}${launchUrl.search}`
+  const fallbackUrl = String(options.fallbackUrl || '').trim()
+  const fallbackExtra = fallbackUrl
+    ? `S.browser_fallback_url=${encodeURIComponent(resolveFallbackLaunchUrl(options))};`
+    : ''
 
-  return `intent://${path}#Intent;scheme=${scheme};action=${ANDROID_INTENT_ACTION_VIEW};category=${ANDROID_INTENT_CATEGORY_BROWSABLE};end`
+  return `intent://${path}#Intent;scheme=${scheme};action=${ANDROID_INTENT_ACTION_VIEW};category=${ANDROID_INTENT_CATEGORY_BROWSABLE};${fallbackExtra}end`
 }
 
 function clickLaunchLink(url, options = {}) {
@@ -136,12 +150,14 @@ export function usePwaLaunchAction() {
             window.setTimeout(() => {
               if (document.visibilityState === 'hidden') return
 
+              const fallbackUrl = resolveFallbackLaunchUrl(options)
+
               if (options.fallbackTopLevel === true) {
-                navigateTopLevel(createStartUrlLaunchUrl(options))
+                navigateTopLevel(fallbackUrl)
                 return
               }
 
-              clickLaunchLink(createStartUrlLaunchUrl(options), options)
+              clickLaunchLink(fallbackUrl, options)
             }, options.fallbackDelay ?? 1200)
           }
         }

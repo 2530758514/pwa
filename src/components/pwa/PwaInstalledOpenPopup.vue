@@ -16,7 +16,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['open', 'desktop'])
+const emit = defineEmits(['open', 'web'])
 
 const appName = computed(() => props.app?.name || 'App')
 
@@ -28,9 +28,9 @@ function handleOpen() {
   emit('open')
 }
 
-function handleDesktop() {
+function handleWeb() {
   visible.value = false
-  emit('desktop')
+  emit('web')
 }
 </script>
 
@@ -61,8 +61,8 @@ function handleDesktop() {
       <button type="button" class="pwa-installed-open-popup__primary" @click="handleOpen">
         {{ t('pwaPage.installedOpen.open') }}
       </button>
-      <button type="button" class="pwa-installed-open-popup__secondary" @click="handleDesktop">
-        {{ t('pwaPage.installedOpen.desktop') }}
+      <button type="button" class="pwa-installed-open-popup__secondary" @click="handleWeb">
+        {{ t('pwaPage.installedOpen.web') }}
       </button>
     </section>
   </div>

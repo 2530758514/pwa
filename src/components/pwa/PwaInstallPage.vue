@@ -344,10 +344,14 @@ function resolvePwaRedirectUrl(url) {
   }
 }
 
-function redirectToPwaDownload() {
+function resolveH5RedirectUrl() {
+  return resolvePwaRedirectUrl(pwaLink.value || FALLBACK_PWA_LINK)
+}
+
+function redirectToH5Page() {
   if (typeof window === 'undefined') return
 
-  window.location.href = resolvePwaRedirectUrl(pwaLink.value || FALLBACK_PWA_LINK)
+  window.location.href = resolveH5RedirectUrl()
 }
 
 function startInstallVisualState() {
@@ -613,14 +617,14 @@ function handleInstalledOpen() {
   postInstallOpenRequested.value = true
   clearPendingInstalledOpenPopup()
   resetInstallLoadingState()
-  silentlyTryOpenInstalledPwa()
+  tryOpenInstalledPwaWithH5Fallback()
 }
 
-function handleInstalledDesktopOpen() {
+function handleInstalledWebOpen() {
   showInstalledOpenPopup.value = false
-  postInstallOpenRequested.value = true
   clearPendingInstalledOpenPopup()
   resetInstallLoadingState()
+  redirectToH5Page()
 }
 
 function resolveCurrentPageUrl() {
@@ -783,6 +787,23 @@ function silentlyTryOpenInstalledPwa(options = {}) {
   return result.outcome === 'attempted'
 }
 
+function tryOpenInstalledPwaWithH5Fallback() {
+  const launchMode = isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol'
+  const result = tryOpenInstalledPwa({
+    fallback: true,
+    fallbackTopLevel: true,
+    fallbackUrl: resolveH5RedirectUrl(),
+    launchMode,
+    target: '_self',
+  })
+
+  if (result.outcome !== 'attempted') {
+    redirectToH5Page()
+  }
+
+  return result.outcome === 'attempted'
+}
+
 function shouldAttemptInstalledPwaOpen() {
   if (isInstalled.value || postInstallOpenRequested.value) return true
 
@@ -830,7 +851,7 @@ async function runNativeInstallPrompt() {
   if (isStandalone.value) return
 
   if (shouldAttemptInstalledPwaOpen()) {
-    silentlyTryOpenInstalledPwa()
+    tryOpenInstalledPwaWithH5Fallback()
     return
   }
 
@@ -861,7 +882,7 @@ async function runNativeInstallPrompt() {
     }
 
     if (result.outcome === 'installed') {
-      silentlyTryOpenInstalledPwa()
+      tryOpenInstalledPwaWithH5Fallback()
       return
     }
 
@@ -875,7 +896,7 @@ async function runNativeInstallPrompt() {
     return
   }
 
-  redirectToPwaDownload()
+  redirectToH5Page()
 }
 
 function handlePopupDownload(controller) {
@@ -884,13 +905,13 @@ function handlePopupDownload(controller) {
   if (installing.value || installVisualActive.value) return
 
   if (postInstallOpenRequested.value) {
-    silentlyTryOpenInstalledPwa()
+    tryOpenInstalledPwaWithH5Fallback()
     controller?.finish?.({ repeat: false })
     return
   }
 
   if (shouldAttemptInstalledPwaOpen()) {
-    silentlyTryOpenInstalledPwa()
+    tryOpenInstalledPwaWithH5Fallback()
     controller?.finish?.({ repeat: false })
     return
   }
@@ -904,7 +925,7 @@ function handlePopupDownload(controller) {
   notifyBigoAppDownload()
 
   if (isApplePwaRedirectDevice.value) {
-    redirectToPwaDownload()
+    redirectToH5Page()
     controller?.finish?.({ repeat: false })
     return
   }
@@ -1024,7 +1045,7 @@ watch(showOpenBrowserGuide, (visible) => {
         v-model="showInstalledOpenPopup"
         :app="appInfo"
         @open="handleInstalledOpen"
-        @desktop="handleInstalledDesktopOpen"
+        @web="handleInstalledWebOpen"
       />
       <div v-if="toastText" class="pwa-page-root__toast">{{ toastText }}</div>
     </div>
