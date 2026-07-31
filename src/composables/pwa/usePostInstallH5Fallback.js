@@ -1,20 +1,16 @@
 import { onBeforeUnmount, onMounted, toValue } from 'vue'
 
 const DEFAULT_FALLBACK_DELAY_MS = 30000
-const DEFAULT_LAUNCH_VISIBILITY_WINDOW_MS = 3000
 const POST_INSTALL_H5_FALLBACK_SESSION_KEY = 'pwa:post-install-h5-fallback-pending'
 
 export function usePostInstallH5Fallback(options = {}) {
   const fallbackDelay = Number.isFinite(options.delay)
     ? options.delay
     : DEFAULT_FALLBACK_DELAY_MS
-  const launchVisibilityWindow = Number.isFinite(options.launchVisibilityWindow)
-    ? options.launchVisibilityWindow
-    : DEFAULT_LAUNCH_VISIBILITY_WINDOW_MS
   let fallbackTimer = null
   let fallbackPending = false
   let fallbackDueAt = 0
-  let launchAttemptExpiresAt = 0
+  let pageHiddenAt = 0
 
   function clearFallbackTimer() {
     if (!fallbackTimer || typeof window === 'undefined') return
@@ -37,7 +33,7 @@ export function usePostInstallH5Fallback(options = {}) {
     clearFallbackTimer()
     fallbackPending = false
     fallbackDueAt = 0
-    launchAttemptExpiresAt = 0
+    pageHiddenAt = 0
     removeStoredFallback()
   }
 
@@ -80,7 +76,10 @@ export function usePostInstallH5Fallback(options = {}) {
       clear()
       return false
     }
-    if (typeof document === 'undefined' || document.visibilityState === 'hidden') return false
+    if (typeof document === 'undefined' || document.visibilityState === 'hidden') {
+      clear()
+      return false
+    }
 
     const redirected = options.onFallback?.() === true
     clear()
@@ -99,15 +98,12 @@ export function usePostInstallH5Fallback(options = {}) {
     clearFallbackTimer()
     fallbackPending = true
     fallbackDueAt = dueAt
-    launchAttemptExpiresAt = 0
+    pageHiddenAt =
+      typeof document !== 'undefined' && document.visibilityState === 'hidden'
+        ? Date.now()
+        : 0
     persistFallback()
     fallbackTimer = window.setTimeout(runFallback, Math.max(0, dueAt - Date.now()))
-  }
-
-  function markLaunchAttempt() {
-    if (!fallbackPending) return
-
-    launchAttemptExpiresAt = Date.now() + launchVisibilityWindow
   }
 
   function handlePageStateChange(event) {
@@ -116,15 +112,20 @@ export function usePostInstallH5Fallback(options = {}) {
       (typeof document !== 'undefined' && document.visibilityState === 'hidden')
 
     if (pageHidden) {
-      if (fallbackPending && Date.now() <= launchAttemptExpiresAt) {
-        clear()
-      }
+      if (fallbackPending) pageHiddenAt = Date.now()
       return
     }
 
     if (fallbackPending && Date.now() >= fallbackDueAt) {
+      if (pageHiddenAt && pageHiddenAt <= fallbackDueAt) {
+        clear()
+        return
+      }
       runFallback()
+      return
     }
+
+    pageHiddenAt = 0
   }
 
   function restore() {
@@ -150,7 +151,6 @@ export function usePostInstallH5Fallback(options = {}) {
 
   return {
     clear,
-    markLaunchAttempt,
     schedule,
   }
 }

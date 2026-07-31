@@ -96,29 +96,30 @@ function navigateTopLevel(url) {
   window.location.assign(url)
 }
 
-function scheduleProtocolFallback(options = {}) {
+function scheduleVisibilityFallback(options = {}) {
+  const fallbackDelay = options.fallbackDelay ?? 1200
+  const fallbackDueAt = Date.now() + fallbackDelay
+  const fallbackExpiresAt = fallbackDueAt + (options.fallbackReturnGrace ?? 1000)
   let fallbackTimer = null
-  let launchHidden = false
+  let fallbackExpiryTimer = null
+  let launchLeftPage = false
 
   function cleanup() {
     if (fallbackTimer) {
       window.clearTimeout(fallbackTimer)
       fallbackTimer = null
     }
+    if (fallbackExpiryTimer) {
+      window.clearTimeout(fallbackExpiryTimer)
+      fallbackExpiryTimer = null
+    }
     document.removeEventListener('visibilitychange', handleVisibilityChange)
+    window.removeEventListener('pagehide', handlePageHide)
+    window.removeEventListener('pageshow', handlePageShow)
   }
 
-  function handleVisibilityChange() {
-    if (document.visibilityState !== 'hidden') return
-
-    launchHidden = true
+  function runFallback() {
     cleanup()
-  }
-
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  fallbackTimer = window.setTimeout(() => {
-    cleanup()
-    if (launchHidden || document.visibilityState === 'hidden') return
 
     const fallbackUrl = resolveFallbackLaunchUrl(options)
     options.onFallback?.()
@@ -129,7 +130,60 @@ function scheduleProtocolFallback(options = {}) {
     }
 
     clickLaunchLink(fallbackUrl, options)
-  }, options.fallbackDelay ?? 1200)
+  }
+
+  function handlePageVisible() {
+    const now = Date.now()
+
+    if (now < fallbackDueAt) {
+      launchLeftPage = false
+      return
+    }
+
+    if (now <= fallbackExpiresAt) {
+      runFallback()
+      return
+    }
+
+    cleanup()
+  }
+
+  function handleVisibilityChange() {
+    if (document.visibilityState === 'hidden') {
+      launchLeftPage = true
+      return
+    }
+
+    handlePageVisible()
+  }
+
+  function handlePageHide() {
+    launchLeftPage = true
+  }
+
+  function handlePageShow() {
+    handlePageVisible()
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('pagehide', handlePageHide)
+  window.addEventListener('pageshow', handlePageShow)
+  fallbackTimer = window.setTimeout(() => {
+    fallbackTimer = null
+    if (document.visibilityState === 'hidden') return
+    if (launchLeftPage && Date.now() > fallbackExpiresAt) {
+      cleanup()
+      return
+    }
+
+    runFallback()
+  }, fallbackDelay)
+  fallbackExpiryTimer = window.setTimeout(() => {
+    fallbackExpiryTimer = null
+    if (document.visibilityState === 'hidden') {
+      cleanup()
+    }
+  }, fallbackExpiresAt - Date.now())
 
   return cleanup
 }
@@ -173,17 +227,25 @@ export function usePwaLaunchAction() {
       const launchMode = resolveLaunchMode(options)
 
       if (launchMode === 'android_intent') {
-        if (options.topLevel === true) {
-          navigateTopLevel(createAndroidIntentLaunchUrl(options))
-        } else {
-          clickLaunchLink(createAndroidIntentLaunchUrl(options), options)
+        const cancelFallback =
+          options.fallback !== false ? scheduleVisibilityFallback(options) : null
+
+        try {
+          if (options.topLevel === true) {
+            navigateTopLevel(createAndroidIntentLaunchUrl(options))
+          } else {
+            clickLaunchLink(createAndroidIntentLaunchUrl(options), options)
+          }
+        } catch (error) {
+          cancelFallback?.()
+          throw error
         }
       } else if (launchMode === 'protocol') {
         if (options.topLevel === true) {
           navigateTopLevel(createProtocolLaunchUrl())
         } else {
           const cancelFallback =
-            options.fallback !== false ? scheduleProtocolFallback(options) : null
+            options.fallback !== false ? scheduleVisibilityFallback(options) : null
 
           try {
             clickLaunchLink(createProtocolLaunchUrl(), options)

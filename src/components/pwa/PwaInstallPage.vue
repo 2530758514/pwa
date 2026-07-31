@@ -11,6 +11,7 @@ import {
 import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
+import { usePwaLaunchReturnFallback } from '@/composables/pwa/usePwaLaunchReturnFallback'
 import { usePostInstallH5Fallback } from '@/composables/pwa/usePostInstallH5Fallback'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
@@ -59,6 +60,7 @@ const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
 const POST_INSTALL_H5_FALLBACK_DELAY_MS = 30000
+const OPEN_APP_VISIBILITY_CHECK_DELAY_MS = 2000
 const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
@@ -210,10 +212,14 @@ const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length 
 
 const {
   clear: clearPostInstallH5Fallback,
-  markLaunchAttempt: markPostInstallPwaLaunchAttempt,
   schedule: schedulePostInstallH5Fallback,
 } = usePostInstallH5Fallback({
   delay: POST_INSTALL_H5_FALLBACK_DELAY_MS,
+  isStandalone,
+  onFallback: redirectToH5Page,
+})
+usePwaLaunchReturnFallback({
+  delay: OPEN_APP_VISIBILITY_CHECK_DELAY_MS,
   isStandalone,
   onFallback: redirectToH5Page,
 })
@@ -543,7 +549,6 @@ function runAndroidPostInstallAutoOpenAttempt() {
     return
   }
 
-  markPostInstallPwaLaunchAttempt()
   tryOpenInstalledPwaAppOnly()
 }
 
@@ -808,10 +813,10 @@ function silentlyTryOpenInstalledPwa(options = {}) {
 function tryOpenInstalledPwaWithH5Fallback() {
   const launchMode = isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol'
   const fallbackUrl = resolveH5RedirectUrl()
-  markPostInstallPwaLaunchAttempt()
   const result = tryOpenInstalledPwa({
     fallback: Boolean(fallbackUrl),
     fallbackTopLevel: true,
+    fallbackDelay: OPEN_APP_VISIBILITY_CHECK_DELAY_MS,
     fallbackUrl,
     launchMode,
     onFallback: fallbackUrl ? clearPostInstallH5Fallback : undefined,
@@ -877,6 +882,13 @@ async function runNativeInstallPrompt() {
   }
 
   if (installPromptShown.value) return
+
+  const installAttemptAt = Date.now()
+  if (isAndroidPwaInstallDevice.value) {
+    schedulePostInstallH5Fallback({
+      dueAt: installAttemptAt + POST_INSTALL_H5_FALLBACK_DELAY_MS,
+    })
+  }
 
   installing.value = true
 
