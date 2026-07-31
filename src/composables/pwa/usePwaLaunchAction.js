@@ -96,6 +96,44 @@ function navigateTopLevel(url) {
   window.location.assign(url)
 }
 
+function scheduleProtocolFallback(options = {}) {
+  let fallbackTimer = null
+  let launchHidden = false
+
+  function cleanup() {
+    if (fallbackTimer) {
+      window.clearTimeout(fallbackTimer)
+      fallbackTimer = null
+    }
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }
+
+  function handleVisibilityChange() {
+    if (document.visibilityState !== 'hidden') return
+
+    launchHidden = true
+    cleanup()
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  fallbackTimer = window.setTimeout(() => {
+    cleanup()
+    if (launchHidden || document.visibilityState === 'hidden') return
+
+    const fallbackUrl = resolveFallbackLaunchUrl(options)
+    options.onFallback?.()
+
+    if (options.fallbackTopLevel === true) {
+      navigateTopLevel(fallbackUrl)
+      return
+    }
+
+    clickLaunchLink(fallbackUrl, options)
+  }, options.fallbackDelay ?? 1200)
+
+  return cleanup
+}
+
 function hasProtocolHandler() {
   const protocolHandlers = getStoredInstallManifest()?.protocol_handlers
 
@@ -144,21 +182,14 @@ export function usePwaLaunchAction() {
         if (options.topLevel === true) {
           navigateTopLevel(createProtocolLaunchUrl())
         } else {
-          clickLaunchLink(createProtocolLaunchUrl(), options)
+          const cancelFallback =
+            options.fallback !== false ? scheduleProtocolFallback(options) : null
 
-          if (options.fallback !== false) {
-            window.setTimeout(() => {
-              if (document.visibilityState === 'hidden') return
-
-              const fallbackUrl = resolveFallbackLaunchUrl(options)
-
-              if (options.fallbackTopLevel === true) {
-                navigateTopLevel(fallbackUrl)
-                return
-              }
-
-              clickLaunchLink(fallbackUrl, options)
-            }, options.fallbackDelay ?? 1200)
+          try {
+            clickLaunchLink(createProtocolLaunchUrl(), options)
+          } catch (error) {
+            cancelFallback?.()
+            throw error
           }
         }
       } else if (options.topLevel === true) {

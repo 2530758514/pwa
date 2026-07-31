@@ -7,14 +7,15 @@ import {
   PWA_METRICS,
   PWA_RATING_BARS,
   PWA_SAFETY_ITEMS,
-  SOURCE_DOWNLOAD_URL,
 } from '@/content/pwaPageContent'
 import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
+import { usePostInstallH5Fallback } from '@/composables/pwa/usePostInstallH5Fallback'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
+import { H5_APP_URL } from '@/shared/config/env'
 import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
 import PwaBottomNav from './PwaBottomNav.vue'
@@ -45,7 +46,6 @@ const props = defineProps({
   },
 })
 
-const FALLBACK_PWA_LINK = SOURCE_DOWNLOAD_URL
 const INSTALL_PROGRESS_DURATION_MS = 12000
 const INSTALL_PROGRESS_STEP_PERCENT = 5
 const INSTALL_PROGRESS_MAX_PERCENT = 100
@@ -58,6 +58,7 @@ const ANDROID_POST_INSTALL_AUTO_OPEN_INTERVAL_MS = 1000
 const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
+const POST_INSTALL_H5_FALLBACK_DELAY_MS = 30000
 const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
@@ -131,8 +132,8 @@ const appInfo = computed(() => {
   }
 })
 
-const pwaLink = computed(
-  () => props.pwaInfo?.h5_url || props.pwaInfo?.h5Url || props.pwaInfo?.pwa_url || FALLBACK_PWA_LINK,
+const h5Link = computed(
+  () => String(props.pwaInfo?.h5_url || props.pwaInfo?.h5Url || H5_APP_URL || '').trim(),
 )
 const pwaBottomMenuDefault = computed(() => props.pwaInfo?.bottomMenuDefault || 'games')
 const showGoogleIcon = computed(() => Number(props.pwaInfo?.google_icon_enabled ?? 1) !== 0)
@@ -206,6 +207,16 @@ const installButtonDisabled = computed(
     (installPromptShown.value && !isInstalled.value && !postInstallOpenRequested.value),
 )
 const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length > 0)
+
+const {
+  clear: clearPostInstallH5Fallback,
+  markLaunchAttempt: markPostInstallPwaLaunchAttempt,
+  schedule: schedulePostInstallH5Fallback,
+} = usePostInstallH5Fallback({
+  delay: POST_INSTALL_H5_FALLBACK_DELAY_MS,
+  isStandalone,
+  onFallback: redirectToH5Page,
+})
 
 function appendSearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
@@ -345,19 +356,25 @@ function resolvePwaRedirectUrl(url) {
 }
 
 function resolveH5RedirectUrl() {
-  return resolvePwaRedirectUrl(pwaLink.value || FALLBACK_PWA_LINK)
+  return h5Link.value ? resolvePwaRedirectUrl(h5Link.value) : ''
 }
 
 function redirectToH5Page() {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined') return false
 
-  window.location.href = resolveH5RedirectUrl()
+  const targetUrl = resolveH5RedirectUrl()
+  if (!targetUrl) return false
+
+  clearPostInstallH5Fallback()
+  window.location.href = targetUrl
+  return true
 }
 
 function startInstallVisualState() {
   postInstallOpenRequested.value = false
   postInstallActionStarted = false
   clearPendingInstalledOpenPopup()
+  clearPostInstallH5Fallback()
   installVisualActive.value = true
   startInstallProgressTimer()
 }
@@ -526,6 +543,7 @@ function runAndroidPostInstallAutoOpenAttempt() {
     return
   }
 
+  markPostInstallPwaLaunchAttempt()
   tryOpenInstalledPwaAppOnly()
 }
 
@@ -789,11 +807,14 @@ function silentlyTryOpenInstalledPwa(options = {}) {
 
 function tryOpenInstalledPwaWithH5Fallback() {
   const launchMode = isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol'
+  const fallbackUrl = resolveH5RedirectUrl()
+  markPostInstallPwaLaunchAttempt()
   const result = tryOpenInstalledPwa({
-    fallback: true,
+    fallback: Boolean(fallbackUrl),
     fallbackTopLevel: true,
-    fallbackUrl: resolveH5RedirectUrl(),
+    fallbackUrl,
     launchMode,
+    onFallback: fallbackUrl ? clearPostInstallH5Fallback : undefined,
     target: '_self',
   })
 
@@ -868,10 +889,14 @@ async function runNativeInstallPrompt() {
     })
 
     if (result.outcome === 'accepted') {
+      const acceptedAt = Date.now()
       installPromptShown.value = true
       startInstallVisualState()
       scheduleAndroidPostInstallAutoOpenRetries()
       schedulePostInstallAction()
+      schedulePostInstallH5Fallback({
+        dueAt: acceptedAt + POST_INSTALL_H5_FALLBACK_DELAY_MS,
+      })
       showLocalToast(t('pwaPage.install.accepted'))
       return
     }
