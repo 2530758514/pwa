@@ -7,6 +7,7 @@ export const pwaApi = {
     return http.get('/pwa_h5_detail', {
       headers: {
         [FRONTEND_ORIGIN_HEADER]: getAttributionSafePageUrl(),
+        lang: 'US',
       },
     })
   },

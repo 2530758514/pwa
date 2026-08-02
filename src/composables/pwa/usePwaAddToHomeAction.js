@@ -37,32 +37,35 @@ export function usePwaAddToHomeAction() {
   } = usePwaInstallPrompt()
   const preparingInstall = shallowRef(false)
   const nativeInstalling = shallowRef(false)
+  let prepareManifestPromise = null
 
   const isAppleDevice = computed(resolveIsAppleDevice)
   const isAndroidDevice = computed(resolveIsAndroidDevice)
 
-  async function prepareInstallManifest(options = {}) {
-    if (preparingInstall.value) return null
+  function prepareInstallManifest(prepareOptions = {}) {
+    if (prepareManifestPromise) return prepareManifestPromise
 
-    try {
-      preparingInstall.value = true
-
-      if (options.forceRefresh) {
-        return await pwaService.refreshPwaManifest(
-          {},
-          {
-            forceRefresh: true,
-            persist: true,
-          },
-        )
+    prepareManifestPromise = (async () => {
+      try {
+        preparingInstall.value = true
+        return prepareOptions.forceRefresh
+          ? await pwaService.refreshPwaManifest(
+              {},
+              {
+                forceRefresh: true,
+                persist: true,
+              },
+            )
+          : await pwaService.ensureCachedPwaManifest({})
+      } catch {
+        return null
+      } finally {
+        preparingInstall.value = false
+        prepareManifestPromise = null
       }
+    })()
 
-      return await pwaService.ensureCachedPwaManifest({})
-    } catch {
-      return null
-    } finally {
-      preparingInstall.value = false
-    }
+    return prepareManifestPromise
   }
 
   async function promptNativeInstall() {

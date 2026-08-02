@@ -81,7 +81,9 @@ const {
   prepareInstallManifest,
   preparingInstall,
   requestAddToHome,
-} = usePwaAddToHomeAction()
+} = usePwaAddToHomeAction({
+  getPwaInfo: () => props.pwaInfo,
+})
 const { tryOpenInstalledPwa } = usePwaLaunchAction()
 
 const installing = shallowRef(false)

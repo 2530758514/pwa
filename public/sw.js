@@ -48,7 +48,7 @@ const FALLBACK_MANIFEST = {
   protocol_handlers: [
     {
       protocol: 'web+hslot',
-      url: '/?protocol_url=%s',
+      url: '/#protocol_url=%s',
     },
   ],
   icons: [

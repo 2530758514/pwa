@@ -107,6 +107,8 @@ export function persistFacebookAttribution(attribution = {}) {
   const normalizedFbp = normalizeClickId(attribution.fbp)
   const normalizedFbc = normalizeClickId(attribution.fbc)
   const normalizedEventSourceUrl = normalizeClickId(attribution.event_source_url)
+  const previousFbclid = normalizeClickId(previousAttribution.fbclid)
+  const hasNewClick = Boolean(normalizedFbclid && normalizedFbclid !== previousFbclid)
 
   if (normalizedFbclid && getUrlAttributionParam(URL_ATTRIBUTION_PARAM_ALIASES.fbclid)) {
     clearBigoAttribution()
@@ -121,12 +123,13 @@ export function persistFacebookAttribution(attribution = {}) {
     ...previousAttribution,
     fbclid: resolvedFbclid || '',
     fbp: normalizedFbp || previousAttribution.fbp || readLocalStorage('fbp') || readCookie('_fbp') || '',
-    fbc:
-      normalizedFbc ||
-      previousAttribution.fbc ||
-      readLocalStorage('fbc') ||
-      readCookie('_fbc') ||
-      buildFbc(resolvedFbclid),
+    fbc: hasNewClick
+      ? normalizedFbc || buildFbc(resolvedFbclid)
+      : normalizedFbc ||
+        previousAttribution.fbc ||
+        readLocalStorage('fbc') ||
+        readCookie('_fbc') ||
+        buildFbc(resolvedFbclid),
     event_source_url: normalizedEventSourceUrl || previousAttribution.event_source_url || '',
     source_param: attribution.source_param || previousAttribution.source_param || '',
     source_value:

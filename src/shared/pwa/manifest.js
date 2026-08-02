@@ -12,7 +12,7 @@ const PWA_MANIFEST_CROSSORIGIN = String(import.meta.env.VITE_PWA_MANIFEST_CROSSO
   .toLowerCase()
 
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const MANIFEST_INFO_SCHEMA_VERSION = 7
+const MANIFEST_INFO_SCHEMA_VERSION = 8
 const MANIFEST_VERSION_PARAM = '_pwa_manifest_v'
 const SCREENSHOT_DIMENSION_TIMEOUT_MS = 4000
 const DEFAULT_INSTALL_DESCRIPTION =
@@ -60,7 +60,7 @@ const PWA_APP_ID_PATH = '/'
 const PWA_APP_SCOPE_PATH = '/'
 const PWA_APP_START_PATH = '/'
 export const PWA_PROTOCOL = 'web+hslot'
-export const PWA_PROTOCOL_HANDLER_URL = '/?protocol_url=%s'
+export const PWA_PROTOCOL_HANDLER_URL = '/#protocol_url=%s'
 const PWA_APP_ID_URL = String(import.meta.env.VITE_PWA_APP_ID || '').trim()
 const PWA_APP_SCOPE_URL = String(import.meta.env.VITE_PWA_APP_SCOPE || '').trim()
 const PWA_APP_START_URL = String(import.meta.env.VITE_PWA_APP_START_URL || '').trim()
@@ -304,6 +304,7 @@ function normalizeManifestOverrides(overrides = {}) {
   const screenshots = normalizeManifestScreenshots(
     overrides.screenshots || overrides.pwa_carousel || overrides.pwaCarousel,
   )
+  const startUrl = normalizeTextValue(overrides.start_url || overrides.startUrl)
   const nextOverrides = {}
 
   if (name) {
@@ -326,6 +327,10 @@ function normalizeManifestOverrides(overrides = {}) {
 
   if (screenshots.length) {
     nextOverrides.screenshots = screenshots
+  }
+
+  if (startUrl) {
+    nextOverrides.start_url = startUrl
   }
 
   return nextOverrides
@@ -551,10 +556,13 @@ function normalizeRelatedApplications(relatedApplications = [], manifestUrl = ''
   return applications
 }
 
-function normalizeInstallableManifest(manifest) {
+function normalizeInstallableManifest(manifest, options = {}) {
   const name = resolveManifestName(manifest)
   const shortName = String(manifest.short_name || manifest.shortName || name).trim()
-  const startUrl = resolveManifestAppUrl(PWA_APP_START_URL || PWA_APP_START_PATH, PWA_APP_START_PATH)
+  const startUrl = resolveManifestAppUrl(
+    options.startUrl || PWA_APP_START_URL || PWA_APP_START_PATH,
+    PWA_APP_START_PATH,
+  )
   const scope = resolveManifestAppUrl(PWA_APP_SCOPE_URL || PWA_APP_SCOPE_PATH, PWA_APP_SCOPE_PATH)
   const id = resolveManifestAppUrl(manifest.id || PWA_APP_ID_URL || PWA_APP_ID_PATH, PWA_APP_ID_PATH)
   const protocolHandlers = normalizeProtocolHandlers(manifest.protocol_handlers)
@@ -623,7 +631,9 @@ function normalizeManifestPayload(manifest, manifestUrl, overrides = {}) {
     manifestUrl,
   )
 
-  return normalizeInstallableManifest(nextManifest)
+  return normalizeInstallableManifest(nextManifest, {
+    startUrl: normalizedOverrides.start_url,
+  })
 }
 
 function resolveManifestCrossOrigin(manifestHref) {

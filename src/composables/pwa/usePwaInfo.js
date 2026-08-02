@@ -23,7 +23,7 @@ function withTimeout(promise, waitMs = PWA_INFO_WAIT_MS) {
   })
 }
 
-export function usePwaInfo() {
+export function usePwaInfo({ autoLoad = true } = {}) {
   async function loadPwaInfo(options = {}) {
     if (requestPromise && options.force !== true) return requestPromise
 
@@ -60,7 +60,7 @@ export function usePwaInfo() {
   const hasPwaInfo = computed(() => Object.keys(pwaInfo.value || {}).length > 0)
 
   onMounted(() => {
-    void loadPwaInfo()
+    if (autoLoad) void loadPwaInfo()
   })
 
   return {

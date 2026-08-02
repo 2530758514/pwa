@@ -4,7 +4,12 @@ import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
+import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
+import {
+  handlePlayerIdentityIframeMessage,
+  resetPlayerIdentityIframeBridge,
+} from '@/services/playerIdentityIframeBridge'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import {
   H5_NOTIFICATION_NAVIGATE,
@@ -119,6 +124,7 @@ function resolveIframeUrl(sourceUrl, pwaInfo = {}) {
 
   try {
     const targetUrl = new URL(sourceUrl, window.location.origin)
+    appendStoredPwaFacebookAttributionParams(targetUrl.searchParams)
     applySearchParams(targetUrl.searchParams, new URLSearchParams(window.location.search))
 
     const hashQueryIndex = window.location.hash.indexOf('?')
@@ -203,12 +209,7 @@ function postPendingNotificationNavigation() {
   const iframeWindow = iframeRef.value?.contentWindow
   const navigation = pendingNotificationNavigation.value
 
-  if (
-    !iframeReady.value ||
-    !iframeWindow ||
-    !iframeOrigin.value ||
-    !navigation?.location
-  ) {
+  if (!iframeReady.value || !iframeWindow || !iframeOrigin.value || !navigation?.location) {
     return
   }
 
@@ -302,9 +303,16 @@ function handleServiceWorkerMessage(event) {
 function handleIframeMessage(event) {
   const iframeWindow = iframeRef.value?.contentWindow
 
+  if (event.source !== iframeWindow || event.origin !== iframeOrigin.value) {
+    return
+  }
+
   if (
-    event.source !== iframeWindow ||
-    event.origin !== iframeOrigin.value
+    handlePlayerIdentityIframeMessage({
+      event,
+      iframeWindow,
+      iframeOrigin: iframeOrigin.value,
+    })
   ) {
     return
   }
@@ -360,6 +368,7 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', syncIframeViewportHeight)
   navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage)
   window.removeEventListener('message', handleIframeMessage)
+  resetPlayerIdentityIframeBridge()
 
   if (pendingViewportSync) {
     window.cancelAnimationFrame(pendingViewportSync)
@@ -381,7 +390,17 @@ onUnmounted(() => {
       class="pwa-iframe-shell__frame"
       :src="iframeSrc"
       title="H5 app"
-      allow="clipboard-read; clipboard-write; fullscreen; payment; autoplay; encrypted-media; geolocation; camera; microphone"
+      allow="
+        clipboard-read;
+        clipboard-write;
+        fullscreen;
+        payment;
+        autoplay;
+        encrypted-media;
+        geolocation;
+        camera;
+        microphone;
+      "
       referrerpolicy="origin"
       allowfullscreen
       @load="handleIframeLoad"
@@ -389,9 +408,10 @@ onUnmounted(() => {
 
     <div v-else class="pwa-iframe-shell__state">
       <p>{{ t('pwaPage.iframe.missingUrl') }}</p>
-      <button type="button" @click="reload">{{ t('pwaPage.iframe.reload') }}</button>
+      <button type="button" @click="reload">
+        {{ t('pwaPage.iframe.reload') }}
+      </button>
     </div>
-
   </main>
 </template>
 

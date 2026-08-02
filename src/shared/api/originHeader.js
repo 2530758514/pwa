@@ -3,7 +3,7 @@
 export function getFrontendOrigin() {
   if (typeof window === 'undefined') return ''
 
-  return window.location?.host || ''
+  return window.location?.origin || ''
 }
 
 export function appendFrontendOriginHeader(headers = {}) {

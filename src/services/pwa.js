@@ -179,6 +179,7 @@ export const pwaService = {
     const forceRefresh = options.forceRefresh === true
     const requestOptions = {
       persist: options.persist === true,
+      manifestOverrides: options.manifestOverrides || {},
     }
 
     if (forceRefresh) {
@@ -194,7 +195,10 @@ export const pwaService = {
 
       const pwaInfo = await pwaService.getPwaInfo(params, { forceRefresh })
       applyPwaInstallMetadata(pwaInfo)
-      const manifestOverrides = resolvePwaManifestOverrides(pwaInfo)
+      const manifestOverrides = {
+        ...resolvePwaManifestOverrides(pwaInfo),
+        ...(options.manifestOverrides || {}),
+      }
 
       if (shouldUseLocalPwaManifest()) {
         return {

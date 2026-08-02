@@ -1,6 +1,14 @@
-﻿import { getFacebookClickId, persistFacebookAttribution } from '@/shared/analytics/facebookAttribution'
+import {
+  getFacebookAttribution,
+  getFacebookClickId,
+  persistFacebookAttribution,
+} from '@/shared/analytics/facebookAttribution'
+import { appendFacebookAttributionParams } from '@/shared/analytics/facebookAttributionParams'
 import { STORAGE_KEYS } from '@/shared/storage/keys'
 import { storage } from '@/shared/storage/storage'
+
+const PWA_ID_PARAM_NAMES = ['pwa_id', 'pwaId']
+const PWA_URL_ID_PARAM_NAMES = ['pwa_url_id', 'pwaUrlId']
 
 function normalizeAttributionValue(value) {
   const normalized = String(value ?? '').trim()
@@ -28,17 +36,28 @@ function getUrlParamSources() {
   return sources
 }
 
+function getFirstParamValue(params, names) {
+  for (const name of names) {
+    const value = normalizeAttributionValue(params.get(name))
+
+    if (value) return value
+  }
+
+  return ''
+}
+
 function getLandingUrlAttribution() {
+  const attribution = {}
+
   for (const params of getUrlParamSources()) {
-    const attribution = {}
     const fbclid = normalizeAttributionValue(params.get('fbclid'))
     const pixelId = normalizeAttributionValue(params.get('pixelId'))
 
-    if (fbclid) {
+    if (!attribution.fbclid && fbclid) {
       attribution.fbclid = fbclid
       attribution.source_param = 'fbclid'
       attribution.source_value = fbclid
-    } else if (pixelId) {
+    } else if (!attribution.fbclid && pixelId) {
       attribution.fbclid = pixelId
       attribution.source_param = 'pixelId'
       attribution.source_value = pixelId
@@ -53,15 +72,27 @@ function getLandingUrlAttribution() {
     const eventSourceUrl = normalizeAttributionValue(
       params.get('event_source_url') || params.get('eventSourceUrl'),
     )
+    const pwaId = getFirstParamValue(params, PWA_ID_PARAM_NAMES)
+    const pwaUrlId = getFirstParamValue(params, PWA_URL_ID_PARAM_NAMES)
 
-    if (fbc) attribution.fbc = fbc
-    if (fbp) attribution.fbp = fbp
-    if (eventSourceUrl) attribution.event_source_url = eventSourceUrl
-
-    if (Object.values(attribution).some(Boolean)) return attribution
+    if (!attribution.fbc && fbc) attribution.fbc = fbc
+    if (!attribution.fbp && fbp) attribution.fbp = fbp
+    if (!attribution.event_source_url && eventSourceUrl) {
+      attribution.event_source_url = eventSourceUrl
+    }
+    if (!attribution.pwa_id && pwaId) attribution.pwa_id = pwaId
+    if (!attribution.pwa_url_id && pwaUrlId) attribution.pwa_url_id = pwaUrlId
   }
 
-  return null
+  if (
+    !attribution.event_source_url &&
+    (attribution.fbclid || attribution.fbc || attribution.fbp) &&
+    hasBrowserRuntime()
+  ) {
+    attribution.event_source_url = window.location.href
+  }
+
+  return Object.values(attribution).some(Boolean) ? attribution : null
 }
 
 function getStoredLandingAttribution() {
@@ -76,10 +107,19 @@ function saveLandingAttribution(attribution) {
   if (!hasBrowserRuntime()) return ''
   if (!attribution || !Object.values(attribution).some(Boolean)) return ''
 
+  const previousAttribution = getStoredLandingAttribution()
   const nextAttribution = {
-    ...getStoredLandingAttribution(),
+    ...previousAttribution,
     ...attribution,
     captured_at: Date.now(),
+  }
+
+  if (
+    attribution.fbclid &&
+    attribution.fbclid !== previousAttribution.fbclid &&
+    !attribution.fbc
+  ) {
+    delete nextAttribution.fbc
   }
 
   storage.set(STORAGE_KEYS.landingAttribution, nextAttribution)
@@ -108,4 +148,11 @@ export function restoreLandingAttribution() {
 
 export function getPwaAttributionClickId() {
   return capturePwaLandingAttribution() || restoreLandingAttribution() || getFacebookClickId()
+}
+
+export function appendStoredPwaFacebookAttributionParams(targetParams) {
+  return appendFacebookAttributionParams(targetParams, {
+    ...getFacebookAttribution(),
+    ...getStoredLandingAttribution(),
+  })
 }

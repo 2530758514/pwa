@@ -1,6 +1,71 @@
 ﻿<!doctype html>
 <html lang="en">
   <head>
+    <script>
+      ;(function () {
+        var configuredPath = '%VITE_PLAYER_IDENTITY_CALLBACK_PATH%'
+        var callbackPath =
+          configuredPath &&
+          configuredPath.charAt(0) === '/' &&
+          configuredPath.slice(0, 2) !== '//' &&
+          configuredPath.indexOf('?') === -1 &&
+          configuredPath.indexOf('#') === -1
+            ? configuredPath.replace(/\/+$/, '') || '/'
+            : '/'
+
+        if ((window.location.pathname.replace(/\/+$/, '') || '/') !== callbackPath) return
+
+        var fragment = window.location.hash.slice(1)
+        if (!isHandoffCallbackFragment(fragment)) return
+
+        window.__PWA_PLAYER_IDENTITY_CALLBACK_ACTIVE__ = true
+        window.__PWA_PLAYER_IDENTITY_HANDOFF_CALLBACK_FRAGMENT__ = fragment
+
+        window.history.replaceState(null, '', window.location.pathname + window.location.search)
+
+        function isHandoffCallbackFragment(rawFragment) {
+          var params = new URLSearchParams(rawFragment)
+          var allowedFields = {
+            handoff_grant: true,
+            handoff_action: true,
+            error: true,
+            state: true,
+          }
+          var values = {}
+
+          for (var entry of params.entries()) {
+            var name = entry[0]
+            var value = entry[1]
+
+            if (!allowedFields[name] || Object.prototype.hasOwnProperty.call(values, name)) {
+              return false
+            }
+
+            values[name] = value
+          }
+
+          var resultFields = ['handoff_grant', 'error'].filter(function (name) {
+            return Object.prototype.hasOwnProperty.call(values, name)
+          })
+
+          if (
+            resultFields.length !== 1 ||
+            !/^[A-Za-z0-9_-]{43,128}$/.test(values.state || '')
+          ) {
+            return false
+          }
+          if (values.error) {
+            return Object.keys(values).length === 2 && values.error === 'identity_not_available'
+          }
+
+          return (
+            Object.keys(values).length === 3 &&
+            /^[a-f0-9]{64}$/.test(values.handoff_grant || '') &&
+            ['exchange', 'provision'].includes(values.handoff_action)
+          )
+        }
+      })()
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" href="/pwa-icons/icon-192.png" sizes="any" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -8,7 +73,156 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0, user-scalable=yes, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#343d44" />
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #343d44;
+      }
+
+      #app {
+        min-height: 100vh;
+        min-height: 100dvh;
+      }
+
+      .identity-first-paint {
+        position: fixed;
+        inset: 0;
+        z-index: 1000300;
+        display: flex;
+        min-height: 100vh;
+        min-height: 100dvh;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        background: #343d44;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      }
+
+      .identity-first-paint__progress {
+        position: fixed;
+        z-index: 1;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        overflow: hidden;
+        background: rgb(255 255 255 / 12%);
+      }
+
+      .identity-first-paint__progress-bar {
+        width: 38%;
+        height: 100%;
+        background: #27ae60;
+        box-shadow: 0 0 10px rgb(39 174 96 / 55%);
+        animation: identity-first-paint-progress 1.8s ease-in-out infinite;
+      }
+
+      .identity-first-paint__visual {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        transform: translateY(-24px);
+      }
+
+      .identity-first-paint__rings {
+        position: relative;
+        width: 87px;
+        aspect-ratio: 1;
+      }
+
+      .identity-first-paint__ring {
+        position: absolute;
+        border: 6px solid transparent;
+        border-right-color: currentcolor;
+        border-radius: 50%;
+        animation: identity-first-paint-rotate 1s linear infinite;
+      }
+
+      .identity-first-paint__ring--one {
+        inset: 0;
+        color: #eb4747;
+      }
+
+      .identity-first-paint__ring--two {
+        inset: 4.5px;
+        color: #ebeb47;
+        animation-duration: 2s;
+      }
+
+      .identity-first-paint__ring--three {
+        inset: 15px;
+        color: #47eb47;
+        animation-duration: 3s;
+      }
+
+      .identity-first-paint__ring--four {
+        inset: 25.5px;
+        color: #47ebeb;
+        animation-duration: 4s;
+      }
+
+      .identity-first-paint__text {
+        display: flex;
+        min-height: 24px;
+        margin: 0;
+        color: #27ae60;
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 24px;
+        letter-spacing: 0.5px;
+      }
+
+      .identity-first-paint__text span {
+        display: inline-block;
+        animation: identity-first-paint-wave 1.2s ease-in-out infinite;
+      }
+
+      .identity-first-paint__text span:nth-child(2) { animation-delay: 70ms; }
+      .identity-first-paint__text span:nth-child(3) { animation-delay: 140ms; }
+      .identity-first-paint__text span:nth-child(4) { animation-delay: 210ms; }
+      .identity-first-paint__text span:nth-child(5) { animation-delay: 280ms; }
+      .identity-first-paint__text span:nth-child(6) { animation-delay: 350ms; }
+      .identity-first-paint__text span:nth-child(7) { animation-delay: 420ms; }
+      .identity-first-paint__text span:nth-child(8) { animation-delay: 490ms; }
+      .identity-first-paint__text span:nth-child(9) { animation-delay: 560ms; }
+      .identity-first-paint__text span:nth-child(10) { animation-delay: 630ms; }
+
+      @keyframes identity-first-paint-progress {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(270%); }
+      }
+
+      @keyframes identity-first-paint-rotate {
+        to { transform: rotate(1turn); }
+      }
+
+      @keyframes identity-first-paint-wave {
+        0%,
+        60%,
+        100% { transform: translateY(0); }
+        30% {
+          color: #fff;
+          transform: translateY(-7px);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .identity-first-paint__progress-bar,
+        .identity-first-paint__ring,
+        .identity-first-paint__text span {
+          animation: none;
+        }
+
+        .identity-first-paint__progress-bar {
+          width: 100%;
+          opacity: 0.75;
+        }
+      }
+    </style>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -20,7 +234,29 @@
     <title>SlotFront H5</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <main class="identity-first-paint" aria-live="polite" aria-label="Loading">
+        <div
+          class="identity-first-paint__progress"
+          role="progressbar"
+          aria-label="Loading progress"
+        >
+          <div class="identity-first-paint__progress-bar"></div>
+        </div>
+        <div class="identity-first-paint__visual">
+          <div class="identity-first-paint__rings" aria-hidden="true">
+            <span class="identity-first-paint__ring identity-first-paint__ring--one"></span>
+            <span class="identity-first-paint__ring identity-first-paint__ring--two"></span>
+            <span class="identity-first-paint__ring identity-first-paint__ring--three"></span>
+            <span class="identity-first-paint__ring identity-first-paint__ring--four"></span>
+          </div>
+          <p class="identity-first-paint__text" aria-hidden="true">
+            <span>l</span><span>o</span><span>a</span><span>d</span><span>i</span><span>n</span
+            ><span>g</span><span>.</span><span>.</span><span>.</span>
+          </p>
+        </div>
+      </main>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
