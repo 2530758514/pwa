@@ -2,6 +2,7 @@ import { playerIdentityService } from '@/services/playerIdentity'
 import {
   createPlayerIdentityHandoffError,
   createPlayerIdentityHandoffResponse,
+  parsePlayerIdentityHandoffConsumed,
   parsePlayerIdentityHandoffRequest,
 } from '@/shared/auth/playerIdentityMessages'
 
@@ -19,6 +20,15 @@ export function handlePlayerIdentityIframeMessage({ event, iframeWindow, iframeO
     event.origin !== iframeOrigin
   ) {
     return false
+  }
+
+  const consumed = parsePlayerIdentityHandoffConsumed(event.data)
+  if (consumed) {
+    if (consumed.targetOrigin !== event.origin || consumed.targetOrigin !== iframeOrigin) {
+      return true
+    }
+    playerIdentityService.completeInstallHandoff(consumed)
+    return true
   }
 
   const request = parsePlayerIdentityHandoffRequest(event.data)
@@ -48,4 +58,8 @@ export function handlePlayerIdentityIframeMessage({ event, iframeWindow, iframeO
 
 export function resetPlayerIdentityIframeBridge() {
   pendingRequests.clear()
+}
+
+export function completePlayerIdentityInstallHandoffForIframe(iframeOrigin) {
+  return playerIdentityService.completePendingInstallHandoffForTarget(iframeOrigin)
 }

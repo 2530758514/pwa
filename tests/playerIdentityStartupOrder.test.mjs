@@ -20,10 +20,14 @@ test('captures a PWA callback before loading pwa_h5_detail and the iframe', () =
   const identityIndex = bootstrap.indexOf('await playerIdentityService.initialize()')
   const captureIndex = bootstrap.indexOf('capturePwaLandingAttribution()')
   const pwaInfoIndex = bootstrap.indexOf('await loadPwaInfo()')
+  const installHandoffIndex = bootstrap.indexOf(
+    'await playerIdentityService.prepareInstallHandoff(targetOrigin)',
+  )
 
   assert.ok(identityIndex >= 0)
   assert.ok(captureIndex > identityIndex)
   assert.ok(pwaInfoIndex > captureIndex)
+  assert.ok(installHandoffIndex > pwaInfoIndex)
   assert.doesNotMatch(bootstrap, /ensureIdentity|h5_url|h5Url/)
   assert.match(appSource, /usePwaInfo\(\{\s*autoLoad: false,/)
 })

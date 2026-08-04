@@ -7,7 +7,12 @@ import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
 import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
+import { H5_APP_URL } from '@/shared/config/env'
 import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
+import {
+  isAndroidInstallIdentityHandoffRuntime,
+  resolvePwaH5IdentityOrigin,
+} from '@/shared/pwa/installIdentityHandoff'
 import { isPlayerIdentityError, playerIdentityService } from '@/services/playerIdentity'
 import { initializePwaNotificationClickTracking } from '@/services/pwaNotificationClickTracking'
 
@@ -19,11 +24,14 @@ const identityReady = shallowRef(false)
 let displayModeQuery = null
 
 function applyReadyThemeColor() {
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#ffffff')
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', isStandalone.value ? '#343d44' : '#ffffff')
 }
 
 function syncStandaloneMode() {
   isStandalone.value = resolveIsPwaStandalone()
+  if (identityReady.value) applyReadyThemeColor()
 }
 
 onMounted(async () => {
@@ -34,7 +42,15 @@ onMounted(async () => {
   try {
     await playerIdentityService.initialize()
     capturePwaLandingAttribution()
-    await loadPwaInfo()
+    const loadedPwaInfo = await loadPwaInfo()
+
+    if (!isStandalone.value && isAndroidInstallIdentityHandoffRuntime()) {
+      const targetOrigin = resolvePwaH5IdentityOrigin(loadedPwaInfo, {
+        fallbackUrl: H5_APP_URL,
+      })
+      if (targetOrigin) await playerIdentityService.prepareInstallHandoff(targetOrigin)
+    }
+
     initializePwaNotificationClickTracking()
     applyReadyThemeColor()
     identityReady.value = true

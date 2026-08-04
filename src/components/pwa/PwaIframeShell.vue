@@ -2,15 +2,18 @@
 import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
+import PlayerIdentityLoading from '@/components/identity/PlayerIdentityLoading.vue'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import {
+  completePlayerIdentityInstallHandoffForIframe,
   handlePlayerIdentityIframeMessage,
   resetPlayerIdentityIframeBridge,
 } from '@/services/playerIdentityIframeBridge'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
+import { isPwaH5AppReadyMessage } from '@/shared/pwa/iframeLifecycleMessages'
 import {
   H5_NOTIFICATION_NAVIGATE,
   H5_NOTIFICATION_NAVIGATION_APPLIED,
@@ -22,6 +25,7 @@ import {
 } from '@/shared/pwa/notificationNavigation'
 
 const FALLBACK_IFRAME_HEIGHT = '100vh'
+const IFRAME_READY_FALLBACK_MS = 12_000
 const SHELL_ONLY_SEARCH_PARAMS = new Set(['redirect'])
 
 defineOptions({
@@ -47,9 +51,11 @@ const {
 } = usePwaShellNotifications()
 const iframeRef = useTemplateRef('iframe')
 const iframeReady = shallowRef(false)
+const iframeAppReady = shallowRef(false)
 const pendingNotificationNavigation = shallowRef(null)
 const activeNotificationLocation = shallowRef('')
 let pendingViewportSync = 0
+let iframeReadyFallbackTimer = 0
 let androidPermissionGrantHandled = false
 
 const iframeShellStyle = computed(() => ({
@@ -195,8 +201,31 @@ const iframeOrigin = computed(() => {
 
 function handleIframeLoad() {
   iframeReady.value = true
+  scheduleIframeReadyFallback()
   postPendingNotificationNavigation()
   void confirmLoadedIframeNotificationNavigation()
+}
+
+function clearIframeReadyFallback() {
+  if (!iframeReadyFallbackTimer) return
+
+  window.clearTimeout(iframeReadyFallbackTimer)
+  iframeReadyFallbackTimer = 0
+}
+
+function revealIframe() {
+  clearIframeReadyFallback()
+  iframeAppReady.value = true
+}
+
+function scheduleIframeReadyFallback() {
+  clearIframeReadyFallback()
+  if (iframeAppReady.value) return
+
+  iframeReadyFallbackTimer = window.setTimeout(() => {
+    iframeReadyFallbackTimer = 0
+    iframeAppReady.value = true
+  }, IFRAME_READY_FALLBACK_MS)
 }
 
 function reload() {
@@ -307,6 +336,12 @@ function handleIframeMessage(event) {
     return
   }
 
+  if (isPwaH5AppReadyMessage(event.data)) {
+    completePlayerIdentityInstallHandoffForIframe(iframeOrigin.value)
+    revealIframe()
+    return
+  }
+
   if (
     handlePlayerIdentityIframeMessage({
       event,
@@ -335,7 +370,9 @@ function handleIframeMessage(event) {
 }
 
 watch(iframeSrc, () => {
+  clearIframeReadyFallback()
   iframeReady.value = false
+  iframeAppReady.value = false
 })
 
 onMounted(() => {
@@ -369,6 +406,7 @@ onUnmounted(() => {
   navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage)
   window.removeEventListener('message', handleIframeMessage)
   resetPlayerIdentityIframeBridge()
+  clearIframeReadyFallback()
 
   if (pendingViewportSync) {
     window.cancelAnimationFrame(pendingViewportSync)
@@ -384,27 +422,31 @@ onUnmounted(() => {
       <span>{{ t('pwaPage.iframe.loading') }}</span>
     </div>
 
-    <iframe
-      v-else-if="iframeSrc"
-      ref="iframeRef"
-      class="pwa-iframe-shell__frame"
-      :src="iframeSrc"
-      title="H5 app"
-      allow="
-        clipboard-read;
-        clipboard-write;
-        fullscreen;
-        payment;
-        autoplay;
-        encrypted-media;
-        geolocation;
-        camera;
-        microphone;
-      "
-      referrerpolicy="origin"
-      allowfullscreen
-      @load="handleIframeLoad"
-    ></iframe>
+    <template v-else-if="iframeSrc">
+      <iframe
+        ref="iframeRef"
+        class="pwa-iframe-shell__frame"
+        :class="{ 'pwa-iframe-shell__frame--ready': iframeAppReady }"
+        :src="iframeSrc"
+        title="H5 app"
+        allow="
+          clipboard-read;
+          clipboard-write;
+          fullscreen;
+          payment;
+          autoplay;
+          encrypted-media;
+          geolocation;
+          camera;
+          microphone;
+        "
+        referrerpolicy="origin"
+        allowfullscreen
+        @load="handleIframeLoad"
+      ></iframe>
+
+      <PlayerIdentityLoading v-if="!iframeAppReady" class="pwa-iframe-shell__loading" />
+    </template>
 
     <div v-else class="pwa-iframe-shell__state">
       <p>{{ t('pwaPage.iframe.missingUrl') }}</p>
@@ -425,7 +467,7 @@ onUnmounted(() => {
   height: var(--pwa-iframe-height, 100dvh);
   overflow: hidden;
   overscroll-behavior: none;
-  background: #000;
+  background: #343d44;
 }
 
 .pwa-iframe-shell__frame {
@@ -433,7 +475,20 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   border: 0;
-  background: #000;
+  background: #343d44;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.pwa-iframe-shell__frame--ready {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.pwa-iframe-shell__loading {
+  z-index: 2;
 }
 
 .pwa-iframe-shell__state {

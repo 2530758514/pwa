@@ -1,7 +1,10 @@
 export const PLAYER_IDENTITY_HANDOFF_REQUEST = 'player_identity_handoff_request'
 export const PLAYER_IDENTITY_HANDOFF_RESPONSE = 'player_identity_handoff_response'
 export const PLAYER_IDENTITY_HANDOFF_ERROR = 'player_identity_handoff_error'
+export const PLAYER_IDENTITY_HANDOFF_CONSUMED = 'player_identity_handoff_consumed'
 export const PLAYER_IDENTITY_MESSAGE_VERSION = 2
+export const PLAYER_IDENTITY_INSTALL_RESPONSE_VERSION = 3
+export const PLAYER_IDENTITY_CONSUMED_VERSION = 1
 
 const REQUEST_FIELDS = new Set([
   'type',
@@ -17,6 +20,14 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{22,128}$/
 const CLIENT_ID_PATTERN = /^auto_h5_[a-f0-9]{64}$/
 const STATE_PATTERN = /^[A-Za-z0-9_-]{43,128}$/
 const CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/
+const CONSUMED_FIELDS = new Set([
+  'type',
+  'version',
+  'request_id',
+  'handoff_id',
+  'target_client_id',
+  'target_origin',
+])
 
 function normalizeExactOrigin(value) {
   const candidate = String(value || '')
@@ -56,6 +67,21 @@ export function parsePlayerIdentityHandoffRequest(data) {
 }
 
 export function createPlayerIdentityHandoffResponse(result) {
+  if (result.mode === 'install') {
+    return Object.freeze({
+      type: PLAYER_IDENTITY_HANDOFF_RESPONSE,
+      version: PLAYER_IDENTITY_INSTALL_RESPONSE_VERSION,
+      request_id: result.requestId,
+      handoff_id: result.handoffId,
+      target_client_id: result.targetClientId,
+      target_origin: result.targetOrigin,
+      handoff_action: result.action,
+      handoff_grant: result.grant,
+      state: result.state,
+      code_verifier: result.verifier,
+    })
+  }
+
   return Object.freeze({
     type: PLAYER_IDENTITY_HANDOFF_RESPONSE,
     version: PLAYER_IDENTITY_MESSAGE_VERSION,
@@ -65,6 +91,31 @@ export function createPlayerIdentityHandoffResponse(result) {
     handoff_action: result.action,
     handoff_grant: result.grant,
     state: result.state,
+  })
+}
+
+export function parsePlayerIdentityHandoffConsumed(data) {
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    Array.isArray(data) ||
+    Object.keys(data).length !== CONSUMED_FIELDS.size ||
+    Object.keys(data).some((name) => !CONSUMED_FIELDS.has(name)) ||
+    data.type !== PLAYER_IDENTITY_HANDOFF_CONSUMED ||
+    data.version !== PLAYER_IDENTITY_CONSUMED_VERSION ||
+    !REQUEST_ID_PATTERN.test(data.request_id || '') ||
+    !REQUEST_ID_PATTERN.test(data.handoff_id || '') ||
+    !CLIENT_ID_PATTERN.test(data.target_client_id || '') ||
+    !normalizeExactOrigin(data.target_origin)
+  ) {
+    return null
+  }
+
+  return Object.freeze({
+    requestId: data.request_id,
+    handoffId: data.handoff_id,
+    targetClientId: data.target_client_id,
+    targetOrigin: data.target_origin,
   })
 }
 

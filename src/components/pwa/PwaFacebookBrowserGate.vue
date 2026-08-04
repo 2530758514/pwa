@@ -1,47 +1,17 @@
 <script setup>
 import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import { t } from '@/content/pwaText'
+import { isAndroidFacebookInAppBrowserRuntime } from '@/shared/pwa/installIdentityHandoff'
 import PwaOpenBrowserGuide from './PwaOpenBrowserGuide.vue'
 
 defineOptions({
   name: 'PwaFacebookBrowserGate',
 })
 
-const FACEBOOK_IN_APP_BROWSER_PATTERN = /FBAN|FBAV|FB_IAB|FBIOS|FB4A/i
-const ANDROID_DEVICE_PATTERN = /Android/i
-const APPLE_DEVICE_PATTERN = /iPad|iPhone|iPod/i
 const AUTO_OPEN_DELAY_MS = 1000
 const USER_GESTURE_RETRY_THROTTLE_MS = 800
 const USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
 const COPY_ACTION_SELECTOR = '[data-pwa-browser-guide-copy-action]'
-
-function resolveNavigatorValue(key) {
-  if (typeof navigator === 'undefined') return ''
-
-  return navigator[key] || ''
-}
-
-function resolveIsFacebookInAppBrowser() {
-  return FACEBOOK_IN_APP_BROWSER_PATTERN.test(resolveNavigatorValue('userAgent'))
-}
-
-function resolveIsAndroidDevice() {
-  return ANDROID_DEVICE_PATTERN.test(
-    `${resolveNavigatorValue('userAgent')} ${resolveNavigatorValue('platform')}`,
-  )
-}
-
-function resolveIsAppleDevice() {
-  if (typeof navigator === 'undefined') return false
-
-  const userAgent = resolveNavigatorValue('userAgent')
-  const platform = resolveNavigatorValue('platform')
-  const isAppleMobile = APPLE_DEVICE_PATTERN.test(`${userAgent} ${platform}`)
-  const isTouchMac =
-    /Macintosh|MacIntel/i.test(`${userAgent} ${platform}`) && navigator.maxTouchPoints > 1
-
-  return isAppleMobile || isTouchMac
-}
 
 function resolveCurrentPageUrl() {
   if (typeof window === 'undefined') return ''
@@ -64,15 +34,11 @@ function buildChromeIntentUrl(url) {
   }
 }
 
-const isFacebookInAppBrowser = resolveIsFacebookInAppBrowser()
-const isAndroidDevice = resolveIsAndroidDevice()
-const isAppleDevice = resolveIsAppleDevice()
-const showGuide = shallowRef(isFacebookInAppBrowser)
+const shouldUseExternalBrowserGate = isAndroidFacebookInAppBrowserRuntime()
+const showGuide = shallowRef(shouldUseExternalBrowserGate)
 const currentUrl = resolveCurrentPageUrl()
-const browserType = isAppleDevice ? 'safari' : 'chrome'
-const browserName = isAppleDevice
-  ? t('pwaPage.browserGuide.safari')
-  : t('pwaPage.browserGuide.chrome')
+const browserType = 'chrome'
+const browserName = t('pwaPage.browserGuide.chrome')
 const openLabel = t('pwaPage.browserGuide.openBrowser', {
   browser: browserName,
 })
@@ -83,14 +49,9 @@ let userGestureRetryListening = false
 let lastUserGestureAttemptAt = 0
 
 function openCurrentPageInExternalBrowser() {
-  if (!isFacebookInAppBrowser || typeof window === 'undefined' || !currentUrl) return
+  if (!shouldUseExternalBrowserGate || typeof window === 'undefined' || !currentUrl) return
 
-  if (isAndroidDevice) {
-    window.location.href = buildChromeIntentUrl(currentUrl)
-    return
-  }
-
-  window.open(currentUrl, '_blank', 'noopener,noreferrer')
+  window.location.href = buildChromeIntentUrl(currentUrl)
 }
 
 function retryOpenFromUserGesture(event) {
@@ -106,7 +67,7 @@ function retryOpenFromUserGesture(event) {
 function setupUserGestureRetry() {
   if (
     typeof window === 'undefined' ||
-    !isFacebookInAppBrowser ||
+    !shouldUseExternalBrowserGate ||
     userGestureRetryListening
   ) {
     return
@@ -137,7 +98,7 @@ function clearAutoOpenTimer() {
 function scheduleAutoOpen() {
   if (
     typeof window === 'undefined' ||
-    !isFacebookInAppBrowser ||
+    !shouldUseExternalBrowserGate ||
     autoOpenAttempted
   ) {
     return
@@ -154,7 +115,7 @@ function scheduleAutoOpen() {
 }
 
 function handlePageShow() {
-  if (!isFacebookInAppBrowser) return
+  if (!shouldUseExternalBrowserGate) return
 
   showGuide.value = true
   setupUserGestureRetry()
@@ -162,7 +123,7 @@ function handlePageShow() {
 }
 
 onMounted(() => {
-  if (!isFacebookInAppBrowser) return
+  if (!shouldUseExternalBrowserGate) return
 
   setupUserGestureRetry()
   scheduleAutoOpen()

@@ -6,6 +6,7 @@ const serviceSource = readFileSync(
   new URL('../src/services/playerIdentity.js', import.meta.url),
   'utf8',
 )
+const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const installSource = readFileSync(
   new URL('../src/composables/pwa/usePwaAddToHomeAction.js', import.meta.url),
   'utf8',
@@ -15,10 +16,12 @@ const launchSource = readFileSync(
   'utf8',
 )
 
-test('installation does not acquire or persist an identity grant', () => {
+test('Android landing startup prepares identity before the native install action', () => {
   assert.doesNotMatch(installSource, /playerIdentity|handoff|manifestOverrides/)
   assert.doesNotMatch(launchSource, /handoff|pwa_handoff_code/)
-  assert.doesNotMatch(serviceSource, /localStorage|web_token_create|web_refresh_register/)
+  assert.match(appSource, /isAndroidInstallIdentityHandoffRuntime\(\)/)
+  assert.match(appSource, /playerIdentityService\.prepareInstallHandoff\(targetOrigin\)/)
+  assert.doesNotMatch(serviceSource, /web_token_create|web_refresh_register/)
   assert.doesNotMatch(serviceSource, /h5_url|h5Url/)
 })
 

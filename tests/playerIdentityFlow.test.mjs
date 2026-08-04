@@ -1,18 +1,38 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  clearInstallHandoffFlow,
   clearHandoffFlow,
+  clearPendingInstallHandoff,
   createAutomaticClientId,
+  createPkceChallenge,
+  isCompletedInstallHandoffForTarget,
   isValidHandoffFlow,
+  isValidInstallHandoffFlow,
+  isValidPendingInstallHandoff,
   parseHandoffCallbackFragment,
+  randomBase64url,
+  readCompletedInstallHandoff,
   readHandoffFlow,
+  readInstallHandoffFlow,
+  readPendingInstallHandoff,
+  writeCompletedInstallHandoff,
   writeHandoffFlow,
+  writeInstallHandoffFlow,
+  writePendingInstallHandoff,
 } from '../src/shared/auth/playerIdentityFlow.js'
 import {
   createPlayerIdentityHandoffError,
   createPlayerIdentityHandoffResponse,
+  parsePlayerIdentityHandoffConsumed,
   parsePlayerIdentityHandoffRequest,
 } from '../src/shared/auth/playerIdentityMessages.js'
+import { isPwaH5AppReadyMessage } from '../src/shared/pwa/iframeLifecycleMessages.js'
+import {
+  isAndroidFacebookInAppBrowserRuntime,
+  isAndroidInstallIdentityHandoffRuntime,
+  resolvePwaH5IdentityOrigin,
+} from '../src/shared/pwa/installIdentityHandoff.js'
 
 const STATE = 'A'.repeat(43)
 const PWA_CLIENT_ID = 'auto_h5_63b22269976bae2fda7d36ad13d42adee76799c6ceeb766e64fb09300548060c'
@@ -42,6 +62,62 @@ test('derives the source client id from the exact PWA Origin', async () => {
   )
 })
 
+test('creates an install PKCE proof without putting a token in storage', async () => {
+  const verifier = randomBase64url(32)
+  const challenge = await createPkceChallenge(verifier)
+
+  assert.match(verifier, /^[A-Za-z0-9_-]{43}$/)
+  assert.match(challenge, /^[A-Za-z0-9_-]{43}$/)
+})
+
+test('prepares install handoff only in an external Android browser', () => {
+  assert.equal(
+    isAndroidInstallIdentityHandoffRuntime({
+      userAgent: 'Mozilla/5.0 (Linux; Android 15) Chrome/140 Mobile',
+    }),
+    true,
+  )
+  assert.equal(
+    isAndroidInstallIdentityHandoffRuntime({
+      userAgent: 'Mozilla/5.0 (Linux; Android 15) FBAN/EMA FBAV/500',
+    }),
+    false,
+  )
+  assert.equal(
+    isAndroidInstallIdentityHandoffRuntime({ userAgent: 'Mozilla/5.0 (iPhone)' }),
+    false,
+  )
+  assert.equal(
+    resolvePwaH5IdentityOrigin(
+      { h5_url: 'https://h5.example.com/start?from=pwa' },
+      { baseOrigin: 'https://pwa.example.com' },
+    ),
+    'https://h5.example.com',
+  )
+})
+
+test('shows the Facebook external-browser gate only on Android', () => {
+  assert.equal(
+    isAndroidFacebookInAppBrowserRuntime({
+      userAgent: 'Mozilla/5.0 (Linux; Android 15) FBAN/EMA FBAV/500',
+    }),
+    true,
+  )
+  assert.equal(
+    isAndroidFacebookInAppBrowserRuntime({
+      userAgent: 'Mozilla/5.0 (iPhone) FBIOS/500 FBAV/500',
+      platform: 'iPhone',
+    }),
+    false,
+  )
+  assert.equal(
+    isAndroidFacebookInAppBrowserRuntime({
+      userAgent: 'Mozilla/5.0 (Linux; Android 15) Chrome/140 Mobile',
+    }),
+    false,
+  )
+})
+
 test('parses only the strict PWA handoff callback branches', () => {
   assert.deepEqual(
     parseHandoffCallbackFragment(
@@ -63,6 +139,31 @@ test('parses only the strict PWA handoff callback branches', () => {
         `handoff_grant=${'a'.repeat(64)}&handoff_action=exchange&state=${STATE}&token=secret`,
       ),
     /identity_handoff_callback_invalid/,
+  )
+})
+
+test('accepts only the strict versioned H5 app-ready message', () => {
+  assert.equal(
+    isPwaH5AppReadyMessage({
+      type: 'pwa_h5_app_ready',
+      version: 1,
+    }),
+    true,
+  )
+  assert.equal(
+    isPwaH5AppReadyMessage({
+      type: 'pwa_h5_app_ready',
+      version: 1,
+      token: 'secret',
+    }),
+    false,
+  )
+  assert.equal(
+    isPwaH5AppReadyMessage({
+      type: 'pwa_h5_app_ready',
+      version: 2,
+    }),
+    false,
   )
 })
 
@@ -121,6 +222,49 @@ test('sends only the approved grant or error response fields', () => {
   })
 })
 
+test('sends a strict install response and accepts only its matching consumed receipt', () => {
+  const result = {
+    mode: 'install',
+    requestId: 'R'.repeat(24),
+    handoffId: 'H'.repeat(24),
+    targetClientId: H5_CLIENT_ID,
+    targetOrigin: 'https://h5.example.com',
+    state: STATE,
+    verifier: 'V'.repeat(43),
+    action: 'exchange',
+    grant: 'a'.repeat(64),
+  }
+
+  assert.deepEqual(createPlayerIdentityHandoffResponse(result), {
+    type: 'player_identity_handoff_response',
+    version: 3,
+    request_id: result.requestId,
+    handoff_id: result.handoffId,
+    target_client_id: H5_CLIENT_ID,
+    target_origin: 'https://h5.example.com',
+    handoff_action: 'exchange',
+    handoff_grant: 'a'.repeat(64),
+    state: STATE,
+    code_verifier: 'V'.repeat(43),
+  })
+
+  const consumed = {
+    type: 'player_identity_handoff_consumed',
+    version: 1,
+    request_id: result.requestId,
+    handoff_id: result.handoffId,
+    target_client_id: H5_CLIENT_ID,
+    target_origin: 'https://h5.example.com',
+  }
+  assert.deepEqual(parsePlayerIdentityHandoffConsumed(consumed), {
+    requestId: result.requestId,
+    handoffId: result.handoffId,
+    targetClientId: H5_CLIENT_ID,
+    targetOrigin: 'https://h5.example.com',
+  })
+  assert.equal(parsePlayerIdentityHandoffConsumed({ ...consumed, token: 'secret' }), null)
+})
+
 test('persists only public handoff request metadata in PWA sessionStorage', () => {
   const previousWindow = globalThis.window
   globalThis.window = { sessionStorage: new MemoryStorage() }
@@ -142,6 +286,66 @@ test('persists only public handoff request metadata in PWA sessionStorage', () =
     assert.equal('token' in readHandoffFlow(), false)
     clearHandoffFlow()
     assert.equal(readHandoffFlow(), null)
+  } finally {
+    globalThis.window = previousWindow
+  }
+})
+
+test('persists the complete one-time install exchange package in Android localStorage', () => {
+  const previousWindow = globalThis.window
+  globalThis.window = {
+    localStorage: new MemoryStorage(),
+    sessionStorage: new MemoryStorage(),
+  }
+
+  try {
+    const now = Date.now()
+    const flow = {
+      version: 1,
+      type: 'install',
+      handoffId: 'H'.repeat(24),
+      sourceClientId: PWA_CLIENT_ID,
+      targetClientId: H5_CLIENT_ID,
+      targetOrigin: 'https://h5.example.com',
+      state: STATE,
+      verifier: 'V'.repeat(43),
+      challenge: 'C'.repeat(43),
+      startedAt: now,
+    }
+    writeInstallHandoffFlow(flow)
+    assert.equal(isValidInstallHandoffFlow(readInstallHandoffFlow(), now), true)
+
+    const pending = {
+      version: 1,
+      type: 'install_pending',
+      handoffId: flow.handoffId,
+      sourceClientId: flow.sourceClientId,
+      targetClientId: flow.targetClientId,
+      targetOrigin: flow.targetOrigin,
+      state: flow.state,
+      verifier: flow.verifier,
+      action: 'provision',
+      grant: 'b'.repeat(64),
+      createdAt: now,
+    }
+    writePendingInstallHandoff(pending)
+    assert.equal(isValidPendingInstallHandoff(readPendingInstallHandoff(), now), true)
+    assert.equal('token' in readPendingInstallHandoff(), false)
+
+    const marker = {
+      version: 1,
+      targetClientId: H5_CLIENT_ID,
+      targetOrigin: 'https://h5.example.com',
+      completedAt: now,
+    }
+    writeCompletedInstallHandoff(marker)
+    assert.equal(
+      isCompletedInstallHandoffForTarget(readCompletedInstallHandoff(), marker),
+      true,
+    )
+
+    clearPendingInstallHandoff()
+    clearInstallHandoffFlow()
   } finally {
     globalThis.window = previousWindow
   }
