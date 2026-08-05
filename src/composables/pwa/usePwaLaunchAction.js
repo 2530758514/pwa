@@ -70,8 +70,9 @@ function resolveFallbackLaunchUrl(options = {}) {
 function createAndroidIntentLaunchUrl(options = {}) {
   const launchUrl = new URL(createStartUrlLaunchUrl(options))
   const scheme = launchUrl.protocol.replace(':', '') || 'https'
-  const path = `${launchUrl.host}${launchUrl.pathname}${launchUrl.search}${launchUrl.hash}`
-  const fallbackUrl = String(options.fallbackUrl || '').trim()
+  const path = `${launchUrl.host}${launchUrl.pathname}${launchUrl.search}`
+  const fallbackUrl =
+    options.intentBrowserFallback === false ? '' : String(options.fallbackUrl || '').trim()
   const fallbackExtra = fallbackUrl
     ? `S.browser_fallback_url=${encodeURIComponent(resolveFallbackLaunchUrl(options))};`
     : ''
@@ -98,24 +99,15 @@ function navigateTopLevel(url) {
 
 function scheduleVisibilityFallback(options = {}) {
   const fallbackDelay = options.fallbackDelay ?? 1200
-  const fallbackDueAt = Date.now() + fallbackDelay
-  const fallbackExpiresAt = fallbackDueAt + (options.fallbackReturnGrace ?? 1000)
   let fallbackTimer = null
-  let fallbackExpiryTimer = null
-  let launchLeftPage = false
 
   function cleanup() {
     if (fallbackTimer) {
       window.clearTimeout(fallbackTimer)
       fallbackTimer = null
     }
-    if (fallbackExpiryTimer) {
-      window.clearTimeout(fallbackExpiryTimer)
-      fallbackExpiryTimer = null
-    }
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     window.removeEventListener('pagehide', handlePageHide)
-    window.removeEventListener('pageshow', handlePageShow)
   }
 
   function runFallback() {
@@ -132,58 +124,32 @@ function scheduleVisibilityFallback(options = {}) {
     clickLaunchLink(fallbackUrl, options)
   }
 
-  function handlePageVisible() {
-    const now = Date.now()
-
-    if (now < fallbackDueAt) {
-      launchLeftPage = false
-      return
-    }
-
-    if (now <= fallbackExpiresAt) {
-      runFallback()
-      return
-    }
-
+  function handleLaunchDetected() {
     cleanup()
+    options.onLaunchDetected?.()
   }
 
   function handleVisibilityChange() {
     if (document.visibilityState === 'hidden') {
-      launchLeftPage = true
-      return
+      handleLaunchDetected()
     }
-
-    handlePageVisible()
   }
 
   function handlePageHide() {
-    launchLeftPage = true
-  }
-
-  function handlePageShow() {
-    handlePageVisible()
+    handleLaunchDetected()
   }
 
   document.addEventListener('visibilitychange', handleVisibilityChange)
   window.addEventListener('pagehide', handlePageHide)
-  window.addEventListener('pageshow', handlePageShow)
   fallbackTimer = window.setTimeout(() => {
     fallbackTimer = null
-    if (document.visibilityState === 'hidden') return
-    if (launchLeftPage && Date.now() > fallbackExpiresAt) {
-      cleanup()
+    if (document.visibilityState === 'hidden') {
+      handleLaunchDetected()
       return
     }
 
     runFallback()
   }, fallbackDelay)
-  fallbackExpiryTimer = window.setTimeout(() => {
-    fallbackExpiryTimer = null
-    if (document.visibilityState === 'hidden') {
-      cleanup()
-    }
-  }, fallbackExpiresAt - Date.now())
 
   return cleanup
 }
@@ -223,36 +189,28 @@ export function usePwaLaunchAction() {
   function tryOpenInstalledPwa(options = {}) {
     if (!isBrowserRuntime()) return { outcome: 'unavailable' }
 
+    let cancelFallback = null
+
     try {
       const launchMode = resolveLaunchMode(options)
 
       if (launchMode === 'android_intent') {
-        const cancelFallback =
+        cancelFallback =
           options.fallback !== false ? scheduleVisibilityFallback(options) : null
 
-        try {
-          if (options.topLevel === true) {
-            navigateTopLevel(createAndroidIntentLaunchUrl(options))
-          } else {
-            clickLaunchLink(createAndroidIntentLaunchUrl(options), options)
-          }
-        } catch (error) {
-          cancelFallback?.()
-          throw error
+        if (options.topLevel === true) {
+          navigateTopLevel(createAndroidIntentLaunchUrl(options))
+        } else {
+          clickLaunchLink(createAndroidIntentLaunchUrl(options), options)
         }
       } else if (launchMode === 'protocol') {
         if (options.topLevel === true) {
           navigateTopLevel(createProtocolLaunchUrl())
         } else {
-          const cancelFallback =
+          cancelFallback =
             options.fallback !== false ? scheduleVisibilityFallback(options) : null
 
-          try {
-            clickLaunchLink(createProtocolLaunchUrl(), options)
-          } catch (error) {
-            cancelFallback?.()
-            throw error
-          }
+          clickLaunchLink(createProtocolLaunchUrl(), options)
         }
       } else if (options.topLevel === true) {
         navigateTopLevel(createStartUrlLaunchUrl(options))
@@ -260,9 +218,9 @@ export function usePwaLaunchAction() {
         clickLaunchLink(createStartUrlLaunchUrl(options), options)
       }
 
-      return { outcome: 'attempted' }
+      return { outcome: 'attempted', cancelFallback }
     } catch (error) {
-      return { outcome: 'failed', error }
+      return { outcome: 'failed', error, cancelFallback }
     }
   }
 

@@ -12,7 +12,6 @@ import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { usePwaLaunchReturnFallback } from '@/composables/pwa/usePwaLaunchReturnFallback'
-import { usePostInstallH5Fallback } from '@/composables/pwa/usePostInstallH5Fallback'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
@@ -54,13 +53,15 @@ const INSTALL_PROGRESS_STEP_MS =
   INSTALL_PROGRESS_DURATION_MS / (INSTALL_PROGRESS_MAX_PERCENT / INSTALL_PROGRESS_STEP_PERCENT)
 const POST_INSTALL_ACTION_DELAY_MS = INSTALL_PROGRESS_DURATION_MS
 const POST_INSTALL_EVENT_ACTION_DELAY_MS = 300
-const ANDROID_POST_INSTALL_AUTO_OPEN_START_MS = INSTALL_PROGRESS_DURATION_MS
-const ANDROID_POST_INSTALL_AUTO_OPEN_INTERVAL_MS = 1000
 const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
-const POST_INSTALL_H5_FALLBACK_DELAY_MS = 30000
-const OPEN_APP_VISIBILITY_CHECK_DELAY_MS = 2000
+const OPEN_APP_VISIBILITY_CHECK_DELAY_MS = 5000
+const OPEN_APP_RETRY_INTERVAL_MS = 1000
+const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
+  Math.floor(OPEN_APP_VISIBILITY_CHECK_DELAY_MS / OPEN_APP_RETRY_INTERVAL_MS) - 1,
+  0,
+)
 const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
@@ -101,8 +102,6 @@ let desktopPointerQuery = null
 let mobileViewportQuery = null
 let postInstallActionTimer = null
 let installProgressTimer = null
-let androidPostInstallAutoOpenStartTimer = null
-let androidPostInstallAutoOpenRetryTimer = null
 let postInstallActionStarted = false
 let installedOpenPopupPending = false
 let installedOpenPopupDueAt = 0
@@ -111,6 +110,9 @@ let openBrowserGuideAutoOpenAttempted = false
 let openBrowserGuideAutoOpenTimer = null
 let openBrowserGuideUserGestureRetryListening = false
 let toastTimer = null
+let pendingOpenAppFallbackCancel = null
+let openAppRetryTimer = null
+let openAppRetryAttemptCount = 0
 
 const appInfo = computed(() => {
   const remote = props.pwaInfo || {}
@@ -212,15 +214,7 @@ const installButtonDisabled = computed(
 )
 const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length > 0)
 
-const {
-  clear: clearPostInstallH5Fallback,
-  schedule: schedulePostInstallH5Fallback,
-} = usePostInstallH5Fallback({
-  delay: POST_INSTALL_H5_FALLBACK_DELAY_MS,
-  isStandalone,
-  onFallback: redirectToH5Page,
-})
-usePwaLaunchReturnFallback({
+const { clear: clearLaunchReturnFallback } = usePwaLaunchReturnFallback({
   delay: OPEN_APP_VISIBILITY_CHECK_DELAY_MS,
   isStandalone,
   onFallback: redirectToH5Page,
@@ -373,16 +367,60 @@ function redirectToH5Page() {
   const targetUrl = resolveH5RedirectUrl()
   if (!targetUrl) return false
 
-  clearPostInstallH5Fallback()
+  clearPendingOpenAppFallback()
   window.location.href = targetUrl
   return true
+}
+
+function clearPendingOpenAppFallback() {
+  clearOpenAppRetryTimer()
+  pendingOpenAppFallbackCancel?.()
+  pendingOpenAppFallbackCancel = null
+  clearLaunchReturnFallback()
+}
+
+function clearOpenAppRetryTimer() {
+  if (!openAppRetryTimer || typeof window === 'undefined') return
+
+  window.clearInterval(openAppRetryTimer)
+  openAppRetryTimer = null
+  openAppRetryAttemptCount = 0
+}
+
+function scheduleOpenAppRetries(launchMode) {
+  if (
+    typeof window === 'undefined' ||
+    launchMode !== 'android_intent' ||
+    !isAndroidPwaInstallDevice.value
+  ) {
+    return
+  }
+
+  clearOpenAppRetryTimer()
+  openAppRetryTimer = window.setInterval(() => {
+    if (typeof document === 'undefined' || document.visibilityState === 'hidden') {
+      clearOpenAppRetryTimer()
+      return
+    }
+
+    openAppRetryAttemptCount += 1
+    tryOpenInstalledPwa({
+      fallback: false,
+      intentBrowserFallback: false,
+      launchMode,
+      target: '_self',
+    })
+
+    if (openAppRetryAttemptCount >= OPEN_APP_RETRY_MAX_ATTEMPTS) {
+      clearOpenAppRetryTimer()
+    }
+  }, OPEN_APP_RETRY_INTERVAL_MS)
 }
 
 function startInstallVisualState() {
   postInstallOpenRequested.value = false
   postInstallActionStarted = false
   clearPendingInstalledOpenPopup()
-  clearPostInstallH5Fallback()
   installVisualActive.value = true
   startInstallProgressTimer()
 }
@@ -391,7 +429,6 @@ function resetInstallLoadingState() {
   installing.value = false
   installVisualActive.value = false
   clearInstallProgressTimer()
-  clearAndroidPostInstallAutoOpenTimers()
   installProgressPercent.value = 0
 }
 
@@ -472,24 +509,6 @@ function reportAndroidPwaInstallCompletionOnce() {
   return androidPwaInstallCompletionRequest
 }
 
-function clearAndroidPostInstallAutoOpenTimers() {
-  if (typeof window === 'undefined') {
-    androidPostInstallAutoOpenStartTimer = null
-    androidPostInstallAutoOpenRetryTimer = null
-    return
-  }
-
-  if (androidPostInstallAutoOpenStartTimer) {
-    window.clearTimeout(androidPostInstallAutoOpenStartTimer)
-    androidPostInstallAutoOpenStartTimer = null
-  }
-
-  if (androidPostInstallAutoOpenRetryTimer) {
-    window.clearInterval(androidPostInstallAutoOpenRetryTimer)
-    androidPostInstallAutoOpenRetryTimer = null
-  }
-}
-
 function startInstallProgressTimer() {
   if (typeof window === 'undefined') return
 
@@ -532,52 +551,8 @@ function resolvePostInstallActionDelay(delay) {
     : POST_INSTALL_ACTION_DELAY_MS
 }
 
-function shouldRunAndroidPostInstallAutoOpen() {
-  if (!isAndroidPwaInstallDevice.value || isStandalone.value || postInstallActionStarted) return false
-  if (typeof document === 'undefined') return false
-
-  return document.visibilityState !== 'hidden'
-}
-
-function tryOpenInstalledPwaAppOnly() {
-  return silentlyTryOpenInstalledPwa({
-    launchMode: isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol',
-  })
-}
-
-function runAndroidPostInstallAutoOpenAttempt() {
-  if (!shouldRunAndroidPostInstallAutoOpen()) {
-    clearAndroidPostInstallAutoOpenTimers()
-    return
-  }
-
-  tryOpenInstalledPwaAppOnly()
-}
-
-function startAndroidPostInstallAutoOpenRetries() {
-  if (androidPostInstallAutoOpenRetryTimer || !shouldRunAndroidPostInstallAutoOpen()) return
-
-  runAndroidPostInstallAutoOpenAttempt()
-  androidPostInstallAutoOpenRetryTimer = window.setInterval(
-    runAndroidPostInstallAutoOpenAttempt,
-    ANDROID_POST_INSTALL_AUTO_OPEN_INTERVAL_MS,
-  )
-}
-
-function scheduleAndroidPostInstallAutoOpenRetries() {
-  if (typeof window === 'undefined' || !isAndroidPwaInstallDevice.value || isStandalone.value) return
-
-  clearAndroidPostInstallAutoOpenTimers()
-  androidPostInstallAutoOpenStartTimer = window.setTimeout(() => {
-    androidPostInstallAutoOpenStartTimer = null
-    void reportAndroidPwaInstallCompletionOnce()
-    startAndroidPostInstallAutoOpenRetries()
-  }, ANDROID_POST_INSTALL_AUTO_OPEN_START_MS)
-}
-
 function runPostInstallAction() {
   clearPostInstallActionTimer()
-  clearAndroidPostInstallAutoOpenTimers()
 
   if (postInstallActionStarted) return
 
@@ -638,7 +613,6 @@ function handlePostInstallPageVisible() {
 }
 
 function handleInstalledOpen() {
-  showInstalledOpenPopup.value = false
   postInstallOpenRequested.value = true
   clearPendingInstalledOpenPopup()
   resetInstallLoadingState()
@@ -799,20 +773,9 @@ function openCurrentPageInExternalBrowser() {
   }
 }
 
-function silentlyTryOpenInstalledPwa(options = {}) {
-  const launchMode =
-    options.launchMode || (isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol')
-  const result = tryOpenInstalledPwa({
-    ...options,
-    fallback: false,
-    launchMode,
-    target: options.target || '_self',
-  })
-
-  return result.outcome === 'attempted'
-}
-
 function tryOpenInstalledPwaWithH5Fallback() {
+  clearPendingOpenAppFallback()
+
   const launchMode = isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol'
   const fallbackUrl = resolveH5RedirectUrl()
   const result = tryOpenInstalledPwa({
@@ -820,14 +783,15 @@ function tryOpenInstalledPwaWithH5Fallback() {
     fallbackTopLevel: true,
     fallbackDelay: OPEN_APP_VISIBILITY_CHECK_DELAY_MS,
     fallbackUrl,
+    intentBrowserFallback: false,
     launchMode,
-    onFallback: fallbackUrl ? clearPostInstallH5Fallback : undefined,
+    onLaunchDetected: clearPendingOpenAppFallback,
+    onFallback: clearOpenAppRetryTimer,
     target: '_self',
   })
 
-  if (result.outcome !== 'attempted') {
-    redirectToH5Page()
-  }
+  pendingOpenAppFallbackCancel = result.cancelFallback || null
+  scheduleOpenAppRetries(launchMode)
 
   return result.outcome === 'attempted'
 }
@@ -885,13 +849,6 @@ async function runNativeInstallPrompt() {
 
   if (installPromptShown.value) return
 
-  const installAttemptAt = Date.now()
-  if (isAndroidPwaInstallDevice.value) {
-    schedulePostInstallH5Fallback({
-      dueAt: installAttemptAt + POST_INSTALL_H5_FALLBACK_DELAY_MS,
-    })
-  }
-
   installing.value = true
 
   try {
@@ -903,14 +860,9 @@ async function runNativeInstallPrompt() {
     })
 
     if (result.outcome === 'accepted') {
-      const acceptedAt = Date.now()
       installPromptShown.value = true
       startInstallVisualState()
-      scheduleAndroidPostInstallAutoOpenRetries()
       schedulePostInstallAction()
-      schedulePostInstallH5Fallback({
-        dueAt: acceptedAt + POST_INSTALL_H5_FALLBACK_DELAY_MS,
-      })
       showLocalToast(t('pwaPage.install.accepted'))
       return
     }
@@ -998,7 +950,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pageshow', handlePostInstallPageVisible)
   clearPostInstallActionTimer()
   clearInstallProgressTimer()
-  clearAndroidPostInstallAutoOpenTimers()
+  clearPendingOpenAppFallback()
   clearOpenBrowserAutoOpenTimer()
   teardownOpenBrowserUserGestureRetry()
   teardownQrCode()
