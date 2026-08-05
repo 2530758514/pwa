@@ -6,7 +6,10 @@
         var playerIdentityEnabled =
           String('%VITE_PLAYER_IDENTITY_ENABLED%').toLowerCase() === 'true'
 
-        if (!playerIdentityEnabled) return
+        if (!playerIdentityEnabled) {
+          document.documentElement.classList.add('player-identity-disabled')
+          return
+        }
 
         var configuredPath = '%VITE_PLAYER_IDENTITY_CALLBACK_PATH%'
         var callbackPath =
@@ -106,6 +109,10 @@
         background: #343d44;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
         transition: opacity 160ms ease;
+      }
+
+      .player-identity-disabled .identity-first-paint {
+        display: none;
       }
 
       .identity-first-paint--leaving {

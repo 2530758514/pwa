@@ -22,8 +22,8 @@ const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo
   autoLoad: false,
 })
 const isStandalone = shallowRef(resolveIsPwaStandalone())
-const identityReady = shallowRef(false)
 const playerIdentityEnabled = isPlayerIdentityEnabled()
+const identityReady = shallowRef(!playerIdentityEnabled)
 let displayModeQuery = null
 
 function applyReadyThemeColor() {

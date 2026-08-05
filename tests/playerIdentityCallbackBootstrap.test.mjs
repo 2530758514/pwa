@@ -4,6 +4,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const firstScript = html.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 const VALID_STATE = 'A'.repeat(43)
 const VALID_GRANT = 'b'.repeat(64)
@@ -15,6 +16,7 @@ function runCallbackBootstrap({
   hash = '',
 } = {}) {
   const replacements = []
+  const htmlClasses = new Set()
   const window = {
     location: { pathname, search, hash },
     history: {
@@ -32,10 +34,17 @@ function runCallbackBootstrap({
   vm.runInNewContext(script, {
     URLSearchParams,
     Object,
+    document: {
+      documentElement: {
+        classList: {
+          add: (value) => htmlClasses.add(value),
+        },
+      },
+    },
     window,
   })
 
-  return { replacements, window }
+  return { htmlClasses, replacements, window }
 }
 
 test('captures and clears a strict memory-only PWA handoff callback', () => {
@@ -77,4 +86,7 @@ test('does not intercept handoff callbacks when the global identity switch is di
   assert.equal(result.window.__PWA_PLAYER_IDENTITY_CALLBACK_ACTIVE__, undefined)
   assert.equal(result.window.__PWA_PLAYER_IDENTITY_HANDOFF_CALLBACK_FRAGMENT__, undefined)
   assert.deepEqual(result.replacements, [])
+  assert.equal(result.htmlClasses.has('player-identity-disabled'), true)
+  assert.match(html, /\.player-identity-disabled \.identity-first-paint \{\s+display: none;/)
+  assert.match(appSource, /const identityReady = shallowRef\(!playerIdentityEnabled\)/)
 })
