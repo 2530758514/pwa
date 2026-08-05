@@ -186,6 +186,8 @@ async function initializeInternal() {
 }
 
 async function prepareInstallHandoffInternal(targetOrigin) {
+  if (!isPlayerIdentityEnabled()) return null
+
   await playerIdentityService.initialize()
 
   const normalizedTargetOrigin = normalizeExactOrigin(targetOrigin)
@@ -227,6 +229,8 @@ async function prepareInstallHandoffInternal(targetOrigin) {
 }
 
 async function resolveHandoffRequestInternal(request) {
+  if (!isPlayerIdentityEnabled()) return null
+
   await playerIdentityService.initialize()
 
   const expectedTargetClientId = await createAutomaticClientId(request.targetOrigin)
@@ -301,10 +305,12 @@ export const playerIdentityService = {
   },
 
   completeInstallHandoff(handoff) {
+    if (!isPlayerIdentityEnabled()) return false
     return completeInstallHandoffInternal(handoff)
   },
 
   completePendingInstallHandoffForTarget(targetOrigin) {
+    if (!isPlayerIdentityEnabled()) return false
     return completePendingInstallHandoffForTargetInternal(targetOrigin)
   },
 }

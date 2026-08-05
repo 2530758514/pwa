@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
 import PlayerIdentityLoading from '@/components/identity/PlayerIdentityLoading.vue'
@@ -26,11 +26,14 @@ import {
 
 const FALLBACK_IFRAME_HEIGHT = '100vh'
 const IFRAME_READY_FALLBACK_MS = 12_000
+const NOTIFICATION_PERMISSION_DELAY_MS = 600
 const SHELL_ONLY_SEARCH_PARAMS = new Set(['redirect'])
 
 defineOptions({
   name: 'PwaIframeShell',
 })
+
+const emit = defineEmits(['app-ready'])
 
 const props = defineProps({
   pwaInfo: {
@@ -56,6 +59,7 @@ const pendingNotificationNavigation = shallowRef(null)
 const activeNotificationLocation = shallowRef('')
 let pendingViewportSync = 0
 let iframeReadyFallbackTimer = 0
+let notificationPermissionTimer = 0
 let androidPermissionGrantHandled = false
 
 const iframeShellStyle = computed(() => ({
@@ -90,6 +94,21 @@ function requestAndroidNotificationPermission() {
     androidPermissionGrantHandled = true
     void requestSubscription({ pwaInfo: props.pwaInfo })
   })
+}
+
+function clearNotificationPermissionTimer() {
+  if (!notificationPermissionTimer) return
+
+  window.clearTimeout(notificationPermissionTimer)
+  notificationPermissionTimer = 0
+}
+
+function scheduleAndroidNotificationPermission() {
+  clearNotificationPermissionTimer()
+  notificationPermissionTimer = window.setTimeout(() => {
+    notificationPermissionTimer = 0
+    requestAndroidNotificationPermission()
+  }, NOTIFICATION_PERMISSION_DELAY_MS)
 }
 
 function resolveIframeViewportHeight() {
@@ -215,7 +234,10 @@ function clearIframeReadyFallback() {
 
 function revealIframe() {
   clearIframeReadyFallback()
+  if (iframeAppReady.value) return
+
   iframeAppReady.value = true
+  void nextTick(() => emit('app-ready'))
 }
 
 function scheduleIframeReadyFallback() {
@@ -224,7 +246,7 @@ function scheduleIframeReadyFallback() {
 
   iframeReadyFallbackTimer = window.setTimeout(() => {
     iframeReadyFallbackTimer = 0
-    iframeAppReady.value = true
+    revealIframe()
   }, IFRAME_READY_FALLBACK_MS)
 }
 
@@ -339,6 +361,7 @@ function handleIframeMessage(event) {
   if (isPwaH5AppReadyMessage(event.data)) {
     completePlayerIdentityInstallHandoffForIframe(iframeOrigin.value)
     revealIframe()
+    scheduleAndroidNotificationPermission()
     return
   }
 
@@ -371,6 +394,7 @@ function handleIframeMessage(event) {
 
 watch(iframeSrc, () => {
   clearIframeReadyFallback()
+  clearNotificationPermissionTimer()
   iframeReady.value = false
   iframeAppReady.value = false
 })
@@ -390,7 +414,6 @@ onMounted(() => {
   navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage)
   window.addEventListener('message', handleIframeMessage)
   void syncPendingNotificationNavigation()
-  requestAndroidNotificationPermission()
 })
 
 onUnmounted(() => {
@@ -407,6 +430,7 @@ onUnmounted(() => {
   window.removeEventListener('message', handleIframeMessage)
   resetPlayerIdentityIframeBridge()
   clearIframeReadyFallback()
+  clearNotificationPermissionTimer()
 
   if (pendingViewportSync) {
     window.cancelAnimationFrame(pendingViewportSync)
@@ -478,6 +502,7 @@ onUnmounted(() => {
   background: #343d44;
   opacity: 0;
   pointer-events: none;
+  transition: opacity 160ms ease;
   visibility: hidden;
 }
 
@@ -514,5 +539,11 @@ onUnmounted(() => {
   background: #01875f;
   color: #fff;
   font-size: 15px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pwa-iframe-shell__frame {
+    transition: none;
+  }
 }
 </style>

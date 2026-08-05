@@ -3,6 +3,11 @@
   <head>
     <script>
       ;(function () {
+        var playerIdentityEnabled =
+          String('%VITE_PLAYER_IDENTITY_ENABLED%').toLowerCase() === 'true'
+
+        if (!playerIdentityEnabled) return
+
         var configuredPath = '%VITE_PLAYER_IDENTITY_CALLBACK_PATH%'
         var callbackPath =
           configuredPath &&
@@ -96,9 +101,16 @@
         min-height: 100dvh;
         align-items: center;
         justify-content: center;
+        opacity: 1;
         color: #fff;
         background: #343d44;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        transition: opacity 160ms ease;
+      }
+
+      .identity-first-paint--leaving {
+        opacity: 0;
+        pointer-events: none;
       }
 
       .identity-first-paint__progress {
@@ -211,6 +223,10 @@
       }
 
       @media (prefers-reduced-motion: reduce) {
+        .identity-first-paint {
+          transition: none;
+        }
+
         .identity-first-paint__progress-bar,
         .identity-first-paint__ring,
         .identity-first-paint__text span {
@@ -234,29 +250,33 @@
     <title>SlotFront H5</title>
   </head>
   <body>
-    <div id="app">
-      <main class="identity-first-paint" aria-live="polite" aria-label="Loading">
-        <div
-          class="identity-first-paint__progress"
-          role="progressbar"
-          aria-label="Loading progress"
-        >
-          <div class="identity-first-paint__progress-bar"></div>
+    <div id="app"></div>
+    <main
+      id="identity-bootstrap-loading"
+      class="identity-first-paint"
+      aria-live="polite"
+      aria-label="Loading"
+    >
+      <div
+        class="identity-first-paint__progress"
+        role="progressbar"
+        aria-label="Loading progress"
+      >
+        <div class="identity-first-paint__progress-bar"></div>
+      </div>
+      <div class="identity-first-paint__visual">
+        <div class="identity-first-paint__rings" aria-hidden="true">
+          <span class="identity-first-paint__ring identity-first-paint__ring--one"></span>
+          <span class="identity-first-paint__ring identity-first-paint__ring--two"></span>
+          <span class="identity-first-paint__ring identity-first-paint__ring--three"></span>
+          <span class="identity-first-paint__ring identity-first-paint__ring--four"></span>
         </div>
-        <div class="identity-first-paint__visual">
-          <div class="identity-first-paint__rings" aria-hidden="true">
-            <span class="identity-first-paint__ring identity-first-paint__ring--one"></span>
-            <span class="identity-first-paint__ring identity-first-paint__ring--two"></span>
-            <span class="identity-first-paint__ring identity-first-paint__ring--three"></span>
-            <span class="identity-first-paint__ring identity-first-paint__ring--four"></span>
-          </div>
-          <p class="identity-first-paint__text" aria-hidden="true">
-            <span>l</span><span>o</span><span>a</span><span>d</span><span>i</span><span>n</span
-            ><span>g</span><span>.</span><span>.</span><span>.</span>
-          </p>
-        </div>
-      </main>
-    </div>
+        <p class="identity-first-paint__text" aria-hidden="true">
+          <span>l</span><span>o</span><span>a</span><span>d</span><span>i</span><span>n</span
+          ><span>g</span><span>.</span><span>.</span><span>.</span>
+        </p>
+      </div>
+    </main>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

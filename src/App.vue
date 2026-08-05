@@ -1,6 +1,5 @@
 ﻿<script setup>
-import { onMounted, onUnmounted, shallowRef } from 'vue'
-import PlayerIdentityLoading from '@/components/identity/PlayerIdentityLoading.vue'
+import { nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
 import PwaFacebookBrowserGate from '@/components/pwa/PwaFacebookBrowserGate.vue'
 import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
@@ -8,19 +7,23 @@ import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
+import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
 import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
 import {
   isAndroidInstallIdentityHandoffRuntime,
   resolvePwaH5IdentityOrigin,
 } from '@/shared/pwa/installIdentityHandoff'
+import { shouldRenderPwaSurfaceImmediately } from '@/shared/pwa/pwaStartupPolicy'
+import { dismissBootstrapLoading } from '@/shared/ui/bootstrapLoading'
 import { isPlayerIdentityError, playerIdentityService } from '@/services/playerIdentity'
 import { initializePwaNotificationClickTracking } from '@/services/pwaNotificationClickTracking'
 
-const { pwaInfo, loading, hasPwaInfo, loadPwaInfo } = usePwaInfo({
+const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo({
   autoLoad: false,
 })
 const isStandalone = shallowRef(resolveIsPwaStandalone())
 const identityReady = shallowRef(false)
+const playerIdentityEnabled = isPlayerIdentityEnabled()
 let displayModeQuery = null
 
 function applyReadyThemeColor() {
@@ -34,26 +37,62 @@ function syncStandaloneMode() {
   if (identityReady.value) applyReadyThemeColor()
 }
 
+async function showReadySurface() {
+  initializePwaNotificationClickTracking()
+  applyReadyThemeColor()
+  identityReady.value = true
+  await nextTick()
+
+  if (!isStandalone.value) dismissBootstrapLoading()
+}
+
+function handleStandaloneAppReady() {
+  dismissBootstrapLoading()
+}
+
 onMounted(async () => {
   displayModeQuery = window.matchMedia?.('(display-mode: standalone)') || null
   displayModeQuery?.addEventListener?.('change', syncStandaloneMode)
   window.addEventListener('pageshow', syncStandaloneMode)
 
   try {
-    await playerIdentityService.initialize()
+    const identityResult = playerIdentityEnabled
+      ? await playerIdentityService.initialize()
+      : null
     capturePwaLandingAttribution()
-    const loadedPwaInfo = await loadPwaInfo()
+    const requiresInstallHandoff =
+      playerIdentityEnabled &&
+      !isStandalone.value &&
+      isAndroidInstallIdentityHandoffRuntime()
+    const hasReturnedInstallHandoff = identityResult?.type === 'install_pending'
+    const canRenderReadySurfaceImmediately = shouldRenderPwaSurfaceImmediately({
+      hasCachedPwaInfo: hasPwaInfo.value,
+      hasReturnedInstallHandoff,
+      hasStandaloneFallback: Boolean(String(H5_APP_URL || '').trim()),
+      isStandalone: isStandalone.value,
+      requiresInstallHandoff,
+    })
 
-    if (!isStandalone.value && isAndroidInstallIdentityHandoffRuntime()) {
+    if (canRenderReadySurfaceImmediately) {
+      await showReadySurface()
+      void loadPwaInfo({ background: true })
+      return
+    }
+
+    let loadedPwaInfo = await loadPwaInfo()
+
+    if (!Object.keys(loadedPwaInfo || {}).length) {
+      loadedPwaInfo = await waitForPwaInfo()
+    }
+
+    if (requiresInstallHandoff && !hasReturnedInstallHandoff) {
       const targetOrigin = resolvePwaH5IdentityOrigin(loadedPwaInfo, {
         fallbackUrl: H5_APP_URL,
       })
       if (targetOrigin) await playerIdentityService.prepareInstallHandoff(targetOrigin)
     }
 
-    initializePwaNotificationClickTracking()
-    applyReadyThemeColor()
-    identityReady.value = true
+    await showReadySurface()
   } catch (error) {
     if (isPlayerIdentityError(error)) return
     // Keep the neutral loading surface for unexpected bootstrap failures too.
@@ -67,9 +106,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <PlayerIdentityLoading v-if="!identityReady" />
-  <PwaIframeShell v-else-if="isStandalone" :pwa-info="pwaInfo" :loading="loading" />
-  <PwaPageSkeleton v-else-if="!hasPwaInfo" />
-  <PwaInstallPage v-else :pwa-info="pwaInfo" :loading-info="loading" :load-pwa-info="loadPwaInfo" />
+  <template v-if="identityReady">
+    <PwaIframeShell
+      v-if="isStandalone"
+      :pwa-info="pwaInfo"
+      :loading="loading"
+      @app-ready="handleStandaloneAppReady"
+    />
+    <PwaPageSkeleton v-else-if="!hasPwaInfo" />
+    <PwaInstallPage
+      v-else
+      :pwa-info="pwaInfo"
+      :loading-info="loading"
+      :load-pwa-info="loadPwaInfo"
+    />
+  </template>
   <PwaFacebookBrowserGate v-if="identityReady && !isStandalone" />
 </template>

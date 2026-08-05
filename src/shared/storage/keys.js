@@ -7,4 +7,5 @@
   pwaInstallState: 'PWA_INSTALL_STATE',
   pwaManifestUrl: 'PWA_MANIFEST_URL',
   pwaManifestInfo: 'PWA_MANIFEST_INFO',
+  pwaInfoCache: 'PWA_INFO_CACHE_V1',
 }

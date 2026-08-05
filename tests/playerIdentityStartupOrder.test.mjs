@@ -32,11 +32,26 @@ test('captures a PWA callback before loading pwa_h5_detail and the iframe', () =
   assert.match(appSource, /usePwaInfo\(\{\s*autoLoad: false,/)
 })
 
+test('uses the global identity switch for callback initialization and install handoff', () => {
+  const bootstrap = getMountedBootstrapSource()
+
+  assert.match(mainSource, /if \(isPlayerIdentityEnabled\(\)\)/)
+  assert.match(bootstrap, /const identityResult = playerIdentityEnabled/)
+  assert.match(bootstrap, /const requiresInstallHandoff =\s*playerIdentityEnabled/)
+})
+
 test('starts notification click requests only after identity and PWA info are ready', () => {
   const bootstrap = getMountedBootstrapSource()
+  const readySurfaceStart = appSource.indexOf('async function showReadySurface()')
+  const readySurfaceEnd = appSource.indexOf('\nfunction handleStandaloneAppReady()', readySurfaceStart)
+  const readySurface = appSource.slice(readySurfaceStart, readySurfaceEnd)
+  const identityIndex = bootstrap.indexOf('await playerIdentityService.initialize()')
   const pwaInfoIndex = bootstrap.indexOf('await loadPwaInfo()')
-  const notificationIndex = bootstrap.indexOf('initializePwaNotificationClickTracking()')
+  const cachedReadyIndex = bootstrap.indexOf('await showReadySurface()')
+  const loadedReadyIndex = bootstrap.lastIndexOf('await showReadySurface()')
 
-  assert.ok(notificationIndex > pwaInfoIndex)
+  assert.match(readySurface, /initializePwaNotificationClickTracking\(\)/)
+  assert.ok(cachedReadyIndex > identityIndex)
+  assert.ok(loadedReadyIndex > pwaInfoIndex)
   assert.doesNotMatch(mainSource, /initializePwaNotificationClickTracking/)
 })

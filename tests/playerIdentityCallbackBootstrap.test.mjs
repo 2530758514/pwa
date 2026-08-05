@@ -8,7 +8,12 @@ const firstScript = html.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 const VALID_STATE = 'A'.repeat(43)
 const VALID_GRANT = 'b'.repeat(64)
 
-function runCallbackBootstrap({ pathname = '/', search = '', hash = '' } = {}) {
+function runCallbackBootstrap({
+  identityEnabled = true,
+  pathname = '/',
+  search = '',
+  hash = '',
+} = {}) {
   const replacements = []
   const window = {
     location: { pathname, search, hash },
@@ -19,7 +24,12 @@ function runCallbackBootstrap({ pathname = '/', search = '', hash = '' } = {}) {
     },
   }
 
-  vm.runInNewContext(firstScript, {
+  const script = firstScript.replace(
+    '%VITE_PLAYER_IDENTITY_ENABLED%',
+    String(identityEnabled),
+  )
+
+  vm.runInNewContext(script, {
     URLSearchParams,
     Object,
     window,
@@ -58,4 +68,13 @@ test('does not intercept normal PWA visits or malformed handoff fragments', () =
     assert.equal(result.window.__PWA_PLAYER_IDENTITY_CALLBACK_ACTIVE__, undefined)
     assert.deepEqual(result.replacements, [])
   }
+})
+
+test('does not intercept handoff callbacks when the global identity switch is disabled', () => {
+  const fragment = `handoff_grant=${VALID_GRANT}&handoff_action=exchange&state=${VALID_STATE}`
+  const result = runCallbackBootstrap({ identityEnabled: false, hash: `#${fragment}` })
+
+  assert.equal(result.window.__PWA_PLAYER_IDENTITY_CALLBACK_ACTIVE__, undefined)
+  assert.equal(result.window.__PWA_PLAYER_IDENTITY_HANDOFF_CALLBACK_FRAGMENT__, undefined)
+  assert.deepEqual(result.replacements, [])
 })

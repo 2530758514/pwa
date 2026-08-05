@@ -8,9 +8,12 @@ import bigoPixelManager from './shared/analytics/bigoPixel'
 import { initializePwaDisplayModeClasses } from './shared/pwa/displayMode'
 import { applyStoredPwaManifestUrl } from './shared/pwa/manifest'
 import { playerIdentityService } from './services/playerIdentity'
+import { isPlayerIdentityEnabled } from './shared/config/playerIdentity'
 
 const shouldEnableVConsole = import.meta.env.DEV || import.meta.env.VITE_ENABLE_VCONSOLE === 'true'
-void playerIdentityService.initialize().catch(() => {})
+if (isPlayerIdentityEnabled()) {
+  void playerIdentityService.initialize().catch(() => {})
+}
 
 if (shouldEnableVConsole) {
   import('vconsole')

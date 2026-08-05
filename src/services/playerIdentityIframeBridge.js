@@ -1,4 +1,5 @@
 import { playerIdentityService } from '@/services/playerIdentity'
+import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
 import {
   createPlayerIdentityHandoffError,
   createPlayerIdentityHandoffResponse,
@@ -13,6 +14,8 @@ function postResponse(iframeWindow, iframeOrigin, response) {
 }
 
 export function handlePlayerIdentityIframeMessage({ event, iframeWindow, iframeOrigin }) {
+  if (!isPlayerIdentityEnabled()) return false
+
   if (
     !iframeWindow ||
     !iframeOrigin ||
@@ -61,5 +64,6 @@ export function resetPlayerIdentityIframeBridge() {
 }
 
 export function completePlayerIdentityInstallHandoffForIframe(iframeOrigin) {
+  if (!isPlayerIdentityEnabled()) return false
   return playerIdentityService.completePendingInstallHandoffForTarget(iframeOrigin)
 }
