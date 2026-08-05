@@ -16,21 +16,17 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['open', 'web'])
+const emit = defineEmits(['open', 'close'])
 
 const appName = computed(() => props.app?.name || 'App')
 
 function close() {
   visible.value = false
+  emit('close')
 }
 
 function handleOpen() {
   emit('open')
-}
-
-function handleWeb() {
-  visible.value = false
-  emit('web')
 }
 </script>
 
@@ -60,9 +56,6 @@ function handleWeb() {
 
       <button type="button" class="pwa-installed-open-popup__primary" @click="handleOpen">
         {{ t('pwaPage.installedOpen.open') }}
-      </button>
-      <button type="button" class="pwa-installed-open-popup__secondary" @click="handleWeb">
-        {{ t('pwaPage.installedOpen.web') }}
       </button>
     </section>
   </div>
@@ -132,8 +125,7 @@ function handleWeb() {
   line-height: 20px;
 }
 
-.pwa-installed-open-popup__primary,
-.pwa-installed-open-popup__secondary {
+.pwa-installed-open-popup__primary {
   width: 100%;
   height: 52px;
   border-radius: 5px;
@@ -149,11 +141,4 @@ function handleWeb() {
   font-weight: 500;
 }
 
-.pwa-installed-open-popup__secondary {
-  margin-top: 12px;
-  border: 1px solid #01875f;
-  background: #fff;
-  color: #01875f;
-  font-weight: 400;
-}
 </style>

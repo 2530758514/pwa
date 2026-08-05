@@ -15,6 +15,10 @@ const installPageSource = readFileSync(
   new URL('../src/components/pwa/PwaInstallPage.vue', import.meta.url),
   'utf8',
 )
+const installedOpenPopupSource = readFileSync(
+  new URL('../src/components/pwa/PwaInstalledOpenPopup.vue', import.meta.url),
+  'utf8',
+)
 const bridgeSource = readFileSync(
   new URL('../src/services/playerIdentityIframeBridge.js', import.meta.url),
   'utf8',
@@ -49,27 +53,39 @@ test('installed shell defers notification permission until the H5 app is ready',
   assert.match(appReadySource, /scheduleAndroidNotificationPermission\(\)/)
 })
 
-test('Android waits for the manual Open action before falling back to H5', () => {
+test('Android shows a persistent Open popup without falling back to H5', () => {
   const openHandlerStart = installPageSource.indexOf('function handleInstalledOpen()')
-  const openHandlerEnd = installPageSource.indexOf('function handleInstalledWebOpen()', openHandlerStart)
+  const openHandlerEnd = installPageSource.indexOf(
+    'function handleInstalledPopupClose()',
+    openHandlerStart,
+  )
   const openHandlerSource = installPageSource.slice(openHandlerStart, openHandlerEnd)
+  const launchHandlerStart = installPageSource.indexOf('function tryOpenInstalledPwaFromLanding()')
+  const launchHandlerEnd = installPageSource.indexOf(
+    'function shouldAttemptInstalledPwaOpen()',
+    launchHandlerStart,
+  )
+  const launchHandlerSource = installPageSource.slice(launchHandlerStart, launchHandlerEnd)
 
-  assert.match(installPageSource, /const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000/)
-  assert.match(installPageSource, /const OPEN_APP_VISIBILITY_CHECK_DELAY_MS = 5000/)
+  assert.match(installPageSource, /const INSTALLED_OPEN_POPUP_DELAY_MS = 15000/)
   assert.match(installPageSource, /const OPEN_APP_RETRY_INTERVAL_MS = 1000/)
   assert.doesNotMatch(installPageSource, /scheduleAndroidPostInstallAutoOpenRetries/)
   assert.doesNotMatch(installPageSource, /schedulePostInstallH5Fallback/)
-  assert.match(openHandlerSource, /tryOpenInstalledPwaWithH5Fallback\(\)/)
+  assert.doesNotMatch(installPageSource, /usePwaLaunchReturnFallback/)
+  assert.match(openHandlerSource, /tryOpenInstalledPwaFromLanding\(\)/)
   assert.doesNotMatch(openHandlerSource, /showInstalledOpenPopup\.value = false/)
-  assert.match(installPageSource, /fallbackDelay: OPEN_APP_VISIBILITY_CHECK_DELAY_MS/)
-  assert.match(installPageSource, /intentBrowserFallback: false/)
-  assert.match(installPageSource, /onLaunchDetected: clearPendingOpenAppFallback/)
-  assert.match(installPageSource, /clearPendingOpenAppFallback\(\)[\s\S]*tryOpenInstalledPwa\(/)
+  assert.doesNotMatch(openHandlerSource, /clearPendingInstalledOpenPopup\(\)/)
+  assert.match(launchHandlerSource, /fallback: false/)
+  assert.match(launchHandlerSource, /intentBrowserFallback: false/)
+  assert.doesNotMatch(launchHandlerSource, /fallbackUrl|fallbackDelay|fallbackTopLevel/)
   assert.match(installPageSource, /scheduleOpenAppRetries\(launchMode\)/)
   assert.match(
     installPageSource,
-    /if \(shouldAttemptInstalledPwaOpen\(\)\) \{\s+tryOpenInstalledPwaWithH5Fallback\(\)/,
+    /if \(shouldAttemptInstalledPwaOpen\(\)\) \{\s+tryOpenInstalledPwaFromLanding\(\)/,
   )
+  assert.doesNotMatch(installedOpenPopupSource, /Open Web Page|installedOpen\.web|emit\('web'\)/)
+  assert.match(installedOpenPopupSource, /visible\.value = false\s+emit\('close'\)/)
+  assert.match(installPageSource, /@close="handleInstalledPopupClose"/)
   assert.match(
     launchSource,
     /const path = `\$\{launchUrl\.host\}\$\{launchUrl\.pathname\}\$\{launchUrl\.search\}`/,

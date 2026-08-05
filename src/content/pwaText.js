@@ -72,10 +72,8 @@
     },
     installedOpen: {
       title: 'App installed',
-      description:
-        '{app} has been added to your home screen. Open the app or continue on the web.',
+      description: '{app} has been added to your home screen. Open the app to continue.',
       open: 'Open App',
-      web: 'Open Web Page',
       close: 'Close open app popup',
     },
     browserGuide: {

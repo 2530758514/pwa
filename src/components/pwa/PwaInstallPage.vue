@@ -11,7 +11,6 @@ import {
 import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
-import { usePwaLaunchReturnFallback } from '@/composables/pwa/usePwaLaunchReturnFallback'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
@@ -51,15 +50,13 @@ const INSTALL_PROGRESS_STEP_PERCENT = 5
 const INSTALL_PROGRESS_MAX_PERCENT = 100
 const INSTALL_PROGRESS_STEP_MS =
   INSTALL_PROGRESS_DURATION_MS / (INSTALL_PROGRESS_MAX_PERCENT / INSTALL_PROGRESS_STEP_PERCENT)
-const POST_INSTALL_ACTION_DELAY_MS = INSTALL_PROGRESS_DURATION_MS
-const POST_INSTALL_EVENT_ACTION_DELAY_MS = 300
-const ANDROID_POST_INSTALL_ACTION_DELAY_MS = 20000
+const INSTALLED_OPEN_POPUP_DELAY_MS = 15000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
-const OPEN_APP_VISIBILITY_CHECK_DELAY_MS = 5000
+const OPEN_APP_RETRY_WINDOW_MS = 5000
 const OPEN_APP_RETRY_INTERVAL_MS = 1000
 const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
-  Math.floor(OPEN_APP_VISIBILITY_CHECK_DELAY_MS / OPEN_APP_RETRY_INTERVAL_MS) - 1,
+  Math.floor(OPEN_APP_RETRY_WINDOW_MS / OPEN_APP_RETRY_INTERVAL_MS) - 1,
   0,
 )
 const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
@@ -110,7 +107,6 @@ let openBrowserGuideAutoOpenAttempted = false
 let openBrowserGuideAutoOpenTimer = null
 let openBrowserGuideUserGestureRetryListening = false
 let toastTimer = null
-let pendingOpenAppFallbackCancel = null
 let openAppRetryTimer = null
 let openAppRetryAttemptCount = 0
 
@@ -213,12 +209,6 @@ const installButtonDisabled = computed(
     (installPromptShown.value && !isInstalled.value && !postInstallOpenRequested.value),
 )
 const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length > 0)
-
-const { clear: clearLaunchReturnFallback } = usePwaLaunchReturnFallback({
-  delay: OPEN_APP_VISIBILITY_CHECK_DELAY_MS,
-  isStandalone,
-  onFallback: redirectToH5Page,
-})
 
 function appendSearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
@@ -367,16 +357,13 @@ function redirectToH5Page() {
   const targetUrl = resolveH5RedirectUrl()
   if (!targetUrl) return false
 
-  clearPendingOpenAppFallback()
+  clearOpenAppAttempt()
   window.location.href = targetUrl
   return true
 }
 
-function clearPendingOpenAppFallback() {
+function clearOpenAppAttempt() {
   clearOpenAppRetryTimer()
-  pendingOpenAppFallbackCancel?.()
-  pendingOpenAppFallbackCancel = null
-  clearLaunchReturnFallback()
 }
 
 function clearOpenAppRetryTimer() {
@@ -539,16 +526,13 @@ function openInstalledOpenPopup() {
 
   showInstalledOpenPopup.value = true
   postInstallActionStarted = true
-  clearPendingInstalledOpenPopup()
   return true
 }
 
 function resolvePostInstallActionDelay(delay) {
   if (Number.isFinite(delay)) return delay
 
-  return isAndroidPwaInstallDevice.value
-    ? ANDROID_POST_INSTALL_ACTION_DELAY_MS
-    : POST_INSTALL_ACTION_DELAY_MS
+  return INSTALLED_OPEN_POPUP_DELAY_MS
 }
 
 function runPostInstallAction() {
@@ -614,16 +598,13 @@ function handlePostInstallPageVisible() {
 
 function handleInstalledOpen() {
   postInstallOpenRequested.value = true
-  clearPendingInstalledOpenPopup()
   resetInstallLoadingState()
-  tryOpenInstalledPwaWithH5Fallback()
+  tryOpenInstalledPwaFromLanding()
 }
 
-function handleInstalledWebOpen() {
-  showInstalledOpenPopup.value = false
+function handleInstalledPopupClose() {
   clearPendingInstalledOpenPopup()
   resetInstallLoadingState()
-  redirectToH5Page()
 }
 
 function resolveCurrentPageUrl() {
@@ -773,24 +754,17 @@ function openCurrentPageInExternalBrowser() {
   }
 }
 
-function tryOpenInstalledPwaWithH5Fallback() {
-  clearPendingOpenAppFallback()
+function tryOpenInstalledPwaFromLanding() {
+  clearOpenAppAttempt()
 
   const launchMode = isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol'
-  const fallbackUrl = resolveH5RedirectUrl()
   const result = tryOpenInstalledPwa({
-    fallback: Boolean(fallbackUrl),
-    fallbackTopLevel: true,
-    fallbackDelay: OPEN_APP_VISIBILITY_CHECK_DELAY_MS,
-    fallbackUrl,
+    fallback: false,
     intentBrowserFallback: false,
     launchMode,
-    onLaunchDetected: clearPendingOpenAppFallback,
-    onFallback: clearOpenAppRetryTimer,
     target: '_self',
   })
 
-  pendingOpenAppFallbackCancel = result.cancelFallback || null
   scheduleOpenAppRetries(launchMode)
 
   return result.outcome === 'attempted'
@@ -843,7 +817,7 @@ async function runNativeInstallPrompt() {
   if (isStandalone.value) return
 
   if (shouldAttemptInstalledPwaOpen()) {
-    tryOpenInstalledPwaWithH5Fallback()
+    tryOpenInstalledPwaFromLanding()
     return
   }
 
@@ -873,7 +847,7 @@ async function runNativeInstallPrompt() {
     }
 
     if (result.outcome === 'installed') {
-      tryOpenInstalledPwaWithH5Fallback()
+      tryOpenInstalledPwaFromLanding()
       return
     }
 
@@ -896,13 +870,13 @@ function handlePopupDownload(controller) {
   if (installing.value || installVisualActive.value) return
 
   if (postInstallOpenRequested.value) {
-    tryOpenInstalledPwaWithH5Fallback()
+    tryOpenInstalledPwaFromLanding()
     controller?.finish?.({ repeat: false })
     return
   }
 
   if (shouldAttemptInstalledPwaOpen()) {
-    tryOpenInstalledPwaWithH5Fallback()
+    tryOpenInstalledPwaFromLanding()
     controller?.finish?.({ repeat: false })
     return
   }
@@ -950,19 +924,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('pageshow', handlePostInstallPageVisible)
   clearPostInstallActionTimer()
   clearInstallProgressTimer()
-  clearPendingOpenAppFallback()
+  clearOpenAppAttempt()
   clearOpenBrowserAutoOpenTimer()
   teardownOpenBrowserUserGestureRetry()
   teardownQrCode()
   if (toastTimer) window.clearTimeout(toastTimer)
-})
-
-watch(isInstalled, (installed) => {
-  if (!installed || !installVisualActive.value || postInstallActionStarted) return
-  if (isAndroidPwaInstallDevice.value) return
-
-  clearPostInstallActionTimer()
-  schedulePostInstallAction(POST_INSTALL_EVENT_ACTION_DELAY_MS)
 })
 
 watch(showOpenBrowserGuide, (visible) => {
@@ -1036,7 +1002,7 @@ watch(showOpenBrowserGuide, (visible) => {
         v-model="showInstalledOpenPopup"
         :app="appInfo"
         @open="handleInstalledOpen"
-        @web="handleInstalledWebOpen"
+        @close="handleInstalledPopupClose"
       />
       <div v-if="toastText" class="pwa-page-root__toast">{{ toastText }}</div>
     </div>
