@@ -2,9 +2,11 @@ export const PLAYER_IDENTITY_HANDOFF_REQUEST = 'player_identity_handoff_request'
 export const PLAYER_IDENTITY_HANDOFF_RESPONSE = 'player_identity_handoff_response'
 export const PLAYER_IDENTITY_HANDOFF_ERROR = 'player_identity_handoff_error'
 export const PLAYER_IDENTITY_HANDOFF_CONSUMED = 'player_identity_handoff_consumed'
+export const PLAYER_IDENTITY_PARENT_READY = 'player_identity_parent_ready'
 export const PLAYER_IDENTITY_MESSAGE_VERSION = 2
 export const PLAYER_IDENTITY_INSTALL_RESPONSE_VERSION = 3
 export const PLAYER_IDENTITY_CONSUMED_VERSION = 1
+export const PLAYER_IDENTITY_PARENT_READY_VERSION = 1
 
 const REQUEST_FIELDS = new Set([
   'type',
@@ -28,6 +30,26 @@ const CONSUMED_FIELDS = new Set([
   'target_client_id',
   'target_origin',
 ])
+const PARENT_READY_FIELDS = new Set(['type', 'version'])
+
+export function createPlayerIdentityParentReady() {
+  return Object.freeze({
+    type: PLAYER_IDENTITY_PARENT_READY,
+    version: PLAYER_IDENTITY_PARENT_READY_VERSION,
+  })
+}
+
+export function isPlayerIdentityParentReady(data) {
+  return Boolean(
+    data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      Object.keys(data).length === PARENT_READY_FIELDS.size &&
+      Object.keys(data).every((name) => PARENT_READY_FIELDS.has(name)) &&
+      data.type === PLAYER_IDENTITY_PARENT_READY &&
+      data.version === PLAYER_IDENTITY_PARENT_READY_VERSION,
+  )
+}
 
 function normalizeExactOrigin(value) {
   const candidate = String(value || '')
@@ -119,12 +141,16 @@ export function parsePlayerIdentityHandoffConsumed(data) {
   })
 }
 
-export function createPlayerIdentityHandoffError(request) {
+export function createPlayerIdentityHandoffError(request, error = 'handoff_unavailable') {
+  const safeError = ['handoff_unavailable', 'install_handoff_missing'].includes(error)
+    ? error
+    : 'handoff_unavailable'
+
   return Object.freeze({
     type: PLAYER_IDENTITY_HANDOFF_ERROR,
     version: PLAYER_IDENTITY_MESSAGE_VERSION,
     request_id: request.requestId,
     state: request.state,
-    error: 'handoff_unavailable',
+    error: safeError,
   })
 }

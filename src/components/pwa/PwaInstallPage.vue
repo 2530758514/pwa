@@ -367,11 +367,25 @@ function clearOpenAppAttempt() {
 }
 
 function clearOpenAppRetryTimer() {
-  if (!openAppRetryTimer || typeof window === 'undefined') return
+  if (typeof window === 'undefined') return
 
-  window.clearInterval(openAppRetryTimer)
+  if (openAppRetryTimer) {
+    window.clearInterval(openAppRetryTimer)
+  }
   openAppRetryTimer = null
   openAppRetryAttemptCount = 0
+  document.removeEventListener('visibilitychange', handleOpenAppVisibilityChange)
+  window.removeEventListener('pagehide', handleOpenAppPageHide)
+}
+
+function handleOpenAppVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    clearOpenAppRetryTimer()
+  }
+}
+
+function handleOpenAppPageHide() {
+  clearOpenAppRetryTimer()
 }
 
 function scheduleOpenAppRetries(launchMode) {
@@ -384,6 +398,8 @@ function scheduleOpenAppRetries(launchMode) {
   }
 
   clearOpenAppRetryTimer()
+  document.addEventListener('visibilitychange', handleOpenAppVisibilityChange)
+  window.addEventListener('pagehide', handleOpenAppPageHide)
   openAppRetryTimer = window.setInterval(() => {
     if (typeof document === 'undefined' || document.visibilityState === 'hidden') {
       clearOpenAppRetryTimer()
@@ -758,14 +774,13 @@ function tryOpenInstalledPwaFromLanding() {
   clearOpenAppAttempt()
 
   const launchMode = isAndroidPwaInstallDevice.value ? 'android_intent' : 'protocol'
+  scheduleOpenAppRetries(launchMode)
   const result = tryOpenInstalledPwa({
     fallback: false,
     intentBrowserFallback: false,
     launchMode,
     target: '_self',
   })
-
-  scheduleOpenAppRetries(launchMode)
 
   return result.outcome === 'attempted'
 }

@@ -22,8 +22,10 @@ import {
   writePendingInstallHandoff,
 } from '../src/shared/auth/playerIdentityFlow.js'
 import {
+  createPlayerIdentityParentReady,
   createPlayerIdentityHandoffError,
   createPlayerIdentityHandoffResponse,
+  isPlayerIdentityParentReady,
   parsePlayerIdentityHandoffConsumed,
   parsePlayerIdentityHandoffRequest,
 } from '../src/shared/auth/playerIdentityMessages.js'
@@ -37,6 +39,21 @@ import {
 const STATE = 'A'.repeat(43)
 const PWA_CLIENT_ID = 'auto_h5_63b22269976bae2fda7d36ad13d42adee76799c6ceeb766e64fb09300548060c'
 const H5_CLIENT_ID = 'auto_h5_929ea700556a72970a42bc746b2b4dcbb3ab6df79005072345a3b90297b0b7fe'
+
+test('accepts only the strict parent-ready message', () => {
+  const message = createPlayerIdentityParentReady()
+
+  assert.deepEqual(message, {
+    type: 'player_identity_parent_ready',
+    version: 1,
+  })
+  assert.equal(isPlayerIdentityParentReady(message), true)
+  assert.equal(
+    isPlayerIdentityParentReady({ ...message, parent_origin: 'https://pwa.example.com' }),
+    false,
+  )
+  assert.equal(isPlayerIdentityParentReady({ ...message, version: 2 }), false)
+})
 
 class MemoryStorage {
   #values = new Map()
@@ -220,6 +237,13 @@ test('sends only the approved grant or error response fields', () => {
     state: STATE,
     error: 'handoff_unavailable',
   })
+  assert.deepEqual(createPlayerIdentityHandoffError(result, 'install_handoff_missing'), {
+    type: 'player_identity_handoff_error',
+    version: 2,
+    request_id: result.requestId,
+    state: STATE,
+    error: 'install_handoff_missing',
+  })
 })
 
 test('sends a strict install response and accepts only its matching consumed receipt', () => {
@@ -333,7 +357,7 @@ test('persists the complete one-time install exchange package in Android localSt
     assert.equal('token' in readPendingInstallHandoff(), false)
 
     const marker = {
-      version: 1,
+      version: 2,
       targetClientId: H5_CLIENT_ID,
       targetOrigin: 'https://h5.example.com',
       completedAt: now,
@@ -342,6 +366,10 @@ test('persists the complete one-time install exchange package in Android localSt
     assert.equal(
       isCompletedInstallHandoffForTarget(readCompletedInstallHandoff(), marker),
       true,
+    )
+    assert.equal(
+      isCompletedInstallHandoffForTarget({ ...marker, version: 1 }, marker),
+      false,
     )
 
     clearPendingInstallHandoff()

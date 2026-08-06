@@ -94,7 +94,7 @@ function completeInstallHandoffInternal({ handoffId = '', targetClientId = '', t
   }
 
   writeCompletedInstallHandoff({
-    version: 1,
+    version: 2,
     targetClientId: pending.targetClientId,
     targetOrigin: pending.targetOrigin,
     completedAt: Date.now(),
@@ -102,20 +102,6 @@ function completeInstallHandoffInternal({ handoffId = '', targetClientId = '', t
   clearPendingInstallHandoff()
   clearInstallHandoffFlow()
   return true
-}
-
-function completePendingInstallHandoffForTargetInternal(targetOrigin) {
-  const pending = readPendingInstallHandoff()
-
-  if (!isValidPendingInstallHandoff(pending) || pending.targetOrigin !== targetOrigin) {
-    return false
-  }
-
-  return completeInstallHandoffInternal({
-    handoffId: pending.handoffId,
-    targetClientId: pending.targetClientId,
-    targetOrigin: pending.targetOrigin,
-  })
 }
 
 async function initializeInternal() {
@@ -255,7 +241,18 @@ async function resolveHandoffRequestInternal(request) {
       grant: pendingInstallHandoff.grant,
     })
   }
-  if (pendingInstallHandoff) clearPendingInstallHandoff()
+  if (pendingInstallHandoff) {
+    clearPendingInstallHandoff()
+    throw new Error('identity_handoff_unavailable')
+  }
+
+  // Once this shell has participated in an install flow, missing or mismatched
+  // data is an integrity failure rather than a legacy installation. Blocking it
+  // prevents a consumed, expired, or retargeted package from creating a second
+  // H5 visitor account.
+  if (readInstallHandoffFlow() || readCompletedInstallHandoff()) {
+    throw new Error('identity_handoff_unavailable')
+  }
 
   if (callbackResult && isSameRequest(callbackResult, request)) {
     if (callbackResult.error) {
@@ -271,18 +268,10 @@ async function resolveHandoffRequestInternal(request) {
     throw new Error('identity_handoff_unavailable')
   }
 
-  const flow = {
-    version: 2,
-    requestId: request.requestId,
-    sourceClientId: await createAutomaticClientId(window.location.origin),
-    targetClientId: request.targetClientId,
-    targetOrigin: request.targetOrigin,
-    state: request.state,
-    challenge: request.challenge,
-    startedAt: Date.now(),
-  }
-  writeHandoffFlow(flow)
-  navigate(createCenterUrl(flow))
+  // Only the browser landing page may start a center authorization. An installed
+  // PWA without a pending package is a pre-rollout installation and must stay in
+  // the shell so the H5 iframe can use its legacy account bootstrap.
+  throw new Error('identity_install_handoff_missing')
 }
 
 export const playerIdentityService = {
@@ -307,10 +296,5 @@ export const playerIdentityService = {
   completeInstallHandoff(handoff) {
     if (!isPlayerIdentityEnabled()) return false
     return completeInstallHandoffInternal(handoff)
-  },
-
-  completePendingInstallHandoffForTarget(targetOrigin) {
-    if (!isPlayerIdentityEnabled()) return false
-    return completePendingInstallHandoffForTargetInternal(targetOrigin)
   },
 }

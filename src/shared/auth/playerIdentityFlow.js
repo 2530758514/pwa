@@ -2,7 +2,7 @@ export const PWA_IDENTITY_HANDOFF_FLOW_KEY = 'pwa_player_identity_handoff_flow_v
 export const PWA_IDENTITY_HANDOFF_FLOW_MAX_AGE_MS = 5 * 60 * 1000
 export const PWA_IDENTITY_INSTALL_FLOW_KEY = 'pwa_player_identity_install_flow_v1'
 export const PWA_IDENTITY_INSTALL_PENDING_KEY = 'pwa_player_identity_install_pending_v1'
-export const PWA_IDENTITY_INSTALL_COMPLETED_KEY = 'pwa_player_identity_install_completed_v1'
+export const PWA_IDENTITY_INSTALL_COMPLETED_KEY = 'pwa_player_identity_install_completed_v2'
 export const PWA_IDENTITY_INSTALL_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 const CALLBACK_FIELDS = new Set(['handoff_grant', 'handoff_action', 'error', 'state'])
@@ -304,7 +304,7 @@ export function isCompletedInstallHandoffForTarget(marker, { targetClientId, tar
     marker &&
       typeof marker === 'object' &&
       !Array.isArray(marker) &&
-      marker.version === 1 &&
+      marker.version === 2 &&
       marker.targetClientId === targetClientId &&
       marker.targetOrigin === targetOrigin &&
       CLIENT_ID_PATTERN.test(marker.targetClientId || '') &&

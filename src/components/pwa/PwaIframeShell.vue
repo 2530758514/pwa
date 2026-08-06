@@ -8,8 +8,8 @@ import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import {
-  completePlayerIdentityInstallHandoffForIframe,
   handlePlayerIdentityIframeMessage,
+  postPlayerIdentityParentReady,
   resetPlayerIdentityIframeBridge,
 } from '@/services/playerIdentityIframeBridge'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
@@ -27,6 +27,8 @@ import {
 const FALLBACK_IFRAME_HEIGHT = '100vh'
 const IFRAME_READY_FALLBACK_MS = 12_000
 const NOTIFICATION_PERMISSION_DELAY_MS = 600
+const PARENT_READY_RETRY_INTERVAL_MS = 500
+const PARENT_READY_RETRY_LIMIT = 20
 const SHELL_ONLY_SEARCH_PARAMS = new Set(['redirect'])
 
 defineOptions({
@@ -60,6 +62,8 @@ const activeNotificationLocation = shallowRef('')
 let pendingViewportSync = 0
 let iframeReadyFallbackTimer = 0
 let notificationPermissionTimer = 0
+let parentReadyRetryTimer = 0
+let parentReadyAttemptCount = 0
 let androidPermissionGrantHandled = false
 
 const iframeShellStyle = computed(() => ({
@@ -220,9 +224,48 @@ const iframeOrigin = computed(() => {
 
 function handleIframeLoad() {
   iframeReady.value = true
+  schedulePlayerIdentityParentReady()
   scheduleIframeReadyFallback()
   postPendingNotificationNavigation()
   void confirmLoadedIframeNotificationNavigation()
+}
+
+function clearPlayerIdentityParentReadyRetries() {
+  if (parentReadyRetryTimer) {
+    window.clearInterval(parentReadyRetryTimer)
+  }
+
+  parentReadyRetryTimer = 0
+  parentReadyAttemptCount = 0
+}
+
+function postPlayerIdentityParentReadyToIframe() {
+  const posted = postPlayerIdentityParentReady({
+    iframeWindow: iframeRef.value?.contentWindow,
+    iframeOrigin: iframeOrigin.value,
+  })
+
+  if (!posted) {
+    clearPlayerIdentityParentReadyRetries()
+    return false
+  }
+
+  parentReadyAttemptCount += 1
+  if (parentReadyAttemptCount >= PARENT_READY_RETRY_LIMIT) {
+    clearPlayerIdentityParentReadyRetries()
+  }
+
+  return true
+}
+
+function schedulePlayerIdentityParentReady() {
+  clearPlayerIdentityParentReadyRetries()
+  if (!postPlayerIdentityParentReadyToIframe()) return
+
+  parentReadyRetryTimer = window.setInterval(
+    postPlayerIdentityParentReadyToIframe,
+    PARENT_READY_RETRY_INTERVAL_MS,
+  )
 }
 
 function clearIframeReadyFallback() {
@@ -359,7 +402,7 @@ function handleIframeMessage(event) {
   }
 
   if (isPwaH5AppReadyMessage(event.data)) {
-    completePlayerIdentityInstallHandoffForIframe(iframeOrigin.value)
+    clearPlayerIdentityParentReadyRetries()
     revealIframe()
     scheduleAndroidNotificationPermission()
     return
@@ -372,6 +415,7 @@ function handleIframeMessage(event) {
       iframeOrigin: iframeOrigin.value,
     })
   ) {
+    clearPlayerIdentityParentReadyRetries()
     return
   }
 
@@ -393,6 +437,7 @@ function handleIframeMessage(event) {
 }
 
 watch(iframeSrc, () => {
+  clearPlayerIdentityParentReadyRetries()
   clearIframeReadyFallback()
   clearNotificationPermissionTimer()
   iframeReady.value = false
@@ -429,6 +474,7 @@ onUnmounted(() => {
   navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage)
   window.removeEventListener('message', handleIframeMessage)
   resetPlayerIdentityIframeBridge()
+  clearPlayerIdentityParentReadyRetries()
   clearIframeReadyFallback()
   clearNotificationPermissionTimer()
 

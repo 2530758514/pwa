@@ -51,6 +51,36 @@ test('installed shell defers notification permission until the H5 app is ready',
 
   assert.doesNotMatch(mountedSource, /requestAndroidNotificationPermission\(\)/)
   assert.match(appReadySource, /scheduleAndroidNotificationPermission\(\)/)
+  assert.doesNotMatch(appReadySource, /completePlayerIdentityInstallHandoff/)
+})
+
+test('installed shell never starts center authorization and clears a package only after receipt', () => {
+  const resolverStart = serviceSource.indexOf('async function resolveHandoffRequestInternal')
+  const resolverEnd = serviceSource.indexOf('\nexport const playerIdentityService', resolverStart)
+  const resolverSource = serviceSource.slice(resolverStart, resolverEnd)
+
+  assert.doesNotMatch(resolverSource, /navigate\(createCenterUrl\(flow\)\)/)
+  assert.match(resolverSource, /identity_install_handoff_missing/)
+  assert.match(
+    resolverSource,
+    /readInstallHandoffFlow\(\) \|\| readCompletedInstallHandoff\(\)/,
+  )
+  assert.match(bridgeSource, /parsePlayerIdentityHandoffConsumed\(event\.data\)/)
+  assert.match(bridgeSource, /completeInstallHandoff\(consumed\)/)
+  assert.doesNotMatch(shellSource, /completePlayerIdentityInstallHandoffForIframe/)
+})
+
+test('installed shell retries a strict parent-ready message until H5 starts the handoff', () => {
+  assert.match(shellSource, /const PARENT_READY_RETRY_INTERVAL_MS = 500/)
+  assert.match(shellSource, /const PARENT_READY_RETRY_LIMIT = 20/)
+  assert.match(shellSource, /function schedulePlayerIdentityParentReady\(\)/)
+  assert.match(shellSource, /schedulePlayerIdentityParentReady\(\)\s+scheduleIframeReadyFallback\(\)/)
+  assert.match(
+    shellSource,
+    /handlePlayerIdentityIframeMessage\([\s\S]*?\)\s+\{\s+clearPlayerIdentityParentReadyRetries\(\)/,
+  )
+  assert.match(bridgeSource, /iframeWindow\.postMessage\(createPlayerIdentityParentReady\(\), targetOrigin\)/)
+  assert.doesNotMatch(bridgeSource, /postMessage\([^\n]+, ['"]\*['"]\)/)
 })
 
 test('Android shows a persistent Open popup without falling back to H5', () => {
@@ -79,6 +109,19 @@ test('Android shows a persistent Open popup without falling back to H5', () => {
   assert.match(launchHandlerSource, /intentBrowserFallback: false/)
   assert.doesNotMatch(launchHandlerSource, /fallbackUrl|fallbackDelay|fallbackTopLevel/)
   assert.match(installPageSource, /scheduleOpenAppRetries\(launchMode\)/)
+  assert.match(
+    installPageSource,
+    /document\.addEventListener\('visibilitychange', handleOpenAppVisibilityChange\)/,
+  )
+  assert.match(installPageSource, /window\.addEventListener\('pagehide', handleOpenAppPageHide\)/)
+  assert.match(
+    installPageSource,
+    /function handleOpenAppVisibilityChange\(\) \{\s+if \(document\.visibilityState === 'hidden'\) \{\s+clearOpenAppRetryTimer\(\)/,
+  )
+  assert.match(
+    launchHandlerSource,
+    /scheduleOpenAppRetries\(launchMode\)[\s\S]*const result = tryOpenInstalledPwa\(/,
+  )
   assert.match(
     installPageSource,
     /if \(shouldAttemptInstalledPwaOpen\(\)\) \{\s+tryOpenInstalledPwaFromLanding\(\)/,
