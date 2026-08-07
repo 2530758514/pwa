@@ -16,9 +16,9 @@ if (isPlayerIdentityEnabled()) {
 }
 
 if (shouldEnableVConsole) {
-  import('vconsole')
-    .then(({ default: VConsole }) => {
-      new VConsole()
+  import('./shared/debug/vconsole')
+    .then(({ initVConsole }) => {
+      initVConsole()
     })
     .catch(() => {})
 }

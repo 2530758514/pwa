@@ -5,6 +5,7 @@ import { appendOsHeader } from '@/shared/api/osHeader'
 import { appendBigoAttributionHeaders } from '@/shared/analytics/bigoAttribution'
 import { appendFacebookAttributionHeaders } from '@/shared/analytics/facebookAttribution'
 import { appendUrlAttributionHeaders } from '@/shared/analytics/urlAttributionHeaders'
+import { showDebugApiErrorToast } from '@/shared/debug/apiErrorToast'
 
 export const http = axios.create({
   baseURL: API_BASE_URL,
@@ -57,6 +58,11 @@ function createResponseError(error) {
   return responseError
 }
 
+function rejectWithDebugToast(error) {
+  showDebugApiErrorToast(error)
+  return Promise.reject(error)
+}
+
 http.interceptors.request.use((config) => {
   config.headers = appendOsHeader(appendFrontendOriginHeader(config.headers || {}))
   appendFacebookAttributionHeaders(config.headers)
@@ -78,9 +84,9 @@ http.interceptors.response.use(
       return payload.data
     }
 
-    return Promise.reject(createPayloadError(payload, response))
+    return rejectWithDebugToast(createPayloadError(payload, response))
   },
-  (error) => Promise.reject(createResponseError(error)),
+  (error) => rejectWithDebugToast(createResponseError(error)),
 )
 
 export default http

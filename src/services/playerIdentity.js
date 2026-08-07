@@ -1,4 +1,5 @@
 import {
+  clearAcquiredInstallHandoff,
   clearInstallHandoffFlow,
   clearHandoffFlow,
   clearPendingInstallHandoff,
@@ -10,11 +11,13 @@ import {
   isValidPendingInstallHandoff,
   parseHandoffCallbackFragment,
   randomBase64url,
+  readAcquiredInstallHandoff,
   readCompletedInstallHandoff,
   readHandoffFlow,
   readInstallHandoffFlow,
   readPendingInstallHandoff,
   takeHandoffCallbackFragment,
+  writeAcquiredInstallHandoff,
   writeCompletedInstallHandoff,
   writeHandoffFlow,
   writeInstallHandoffFlow,
@@ -35,6 +38,10 @@ export class PlayerIdentityNavigationError extends Error {
 
 export function isPlayerIdentityError(error) {
   return String(error?.code || error?.message || '').startsWith('identity_')
+}
+
+export function isPlayerIdentityNavigationError(error) {
+  return error instanceof PlayerIdentityNavigationError || error?.navigationStarted === true
 }
 
 function navigate(url) {
@@ -100,6 +107,7 @@ function completeInstallHandoffInternal({ handoffId = '', targetClientId = '', t
     completedAt: Date.now(),
   })
   clearPendingInstallHandoff()
+  clearAcquiredInstallHandoff()
   clearInstallHandoffFlow()
   return true
 }
@@ -145,6 +153,12 @@ async function initializeInternal() {
       createdAt: Date.now(),
     })
     writePendingInstallHandoff(pending)
+    writeAcquiredInstallHandoff({
+      version: 1,
+      targetClientId: pending.targetClientId,
+      targetOrigin: pending.targetOrigin,
+      acquiredAt: pending.createdAt,
+    })
     clearInstallHandoffFlow()
     return pending
   }
@@ -190,7 +204,16 @@ async function prepareInstallHandoffInternal(targetOrigin) {
   if (isValidPendingInstallHandoff(pending) && isMatchingTarget(pending, target)) {
     return Object.freeze({ status: 'pending', ...target })
   }
-  if (pending) clearPendingInstallHandoff()
+  if (pending) {
+    clearPendingInstallHandoff()
+    clearAcquiredInstallHandoff()
+    clearInstallHandoffFlow()
+  }
+
+  const acquired = readAcquiredInstallHandoff()
+  if (acquired) {
+    clearAcquiredInstallHandoff()
+  }
 
   let flow = readInstallHandoffFlow()
   if (!isValidInstallHandoffFlow(flow) || !isMatchingTarget(flow, target)) {
@@ -242,7 +265,10 @@ async function resolveHandoffRequestInternal(request) {
     })
   }
   if (pendingInstallHandoff) {
-    clearPendingInstallHandoff()
+    if (!isValidPendingInstallHandoff(pendingInstallHandoff)) {
+      clearPendingInstallHandoff()
+      clearAcquiredInstallHandoff()
+    }
     throw new Error('identity_handoff_unavailable')
   }
 
@@ -250,7 +276,11 @@ async function resolveHandoffRequestInternal(request) {
   // data is an integrity failure rather than a legacy installation. Blocking it
   // prevents a consumed, expired, or retargeted package from creating a second
   // H5 visitor account.
-  if (readInstallHandoffFlow() || readCompletedInstallHandoff()) {
+  if (
+    readInstallHandoffFlow() ||
+    readAcquiredInstallHandoff() ||
+    readCompletedInstallHandoff()
+  ) {
     throw new Error('identity_handoff_unavailable')
   }
 

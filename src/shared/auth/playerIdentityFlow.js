@@ -2,6 +2,7 @@ export const PWA_IDENTITY_HANDOFF_FLOW_KEY = 'pwa_player_identity_handoff_flow_v
 export const PWA_IDENTITY_HANDOFF_FLOW_MAX_AGE_MS = 5 * 60 * 1000
 export const PWA_IDENTITY_INSTALL_FLOW_KEY = 'pwa_player_identity_install_flow_v1'
 export const PWA_IDENTITY_INSTALL_PENDING_KEY = 'pwa_player_identity_install_pending_v1'
+export const PWA_IDENTITY_INSTALL_ACQUIRED_KEY = 'pwa_player_identity_install_acquired_v1'
 export const PWA_IDENTITY_INSTALL_COMPLETED_KEY = 'pwa_player_identity_install_completed_v2'
 export const PWA_IDENTITY_INSTALL_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
@@ -283,6 +284,37 @@ export function isValidPendingInstallHandoff(handoff, now = Date.now()) {
       Number.isFinite(Number(handoff.createdAt)) &&
       now - Number(handoff.createdAt) >= 0 &&
       now - Number(handoff.createdAt) <= PWA_IDENTITY_INSTALL_MAX_AGE_MS,
+  )
+}
+
+export function readAcquiredInstallHandoff() {
+  return readStoredJson(getLocalStorage(), PWA_IDENTITY_INSTALL_ACQUIRED_KEY)
+}
+
+export function writeAcquiredInstallHandoff(marker) {
+  writeStoredJson(
+    getLocalStorage(),
+    PWA_IDENTITY_INSTALL_ACQUIRED_KEY,
+    marker,
+    'identity_local_storage_unavailable',
+  )
+}
+
+export function clearAcquiredInstallHandoff() {
+  removeStoredValue(getLocalStorage(), PWA_IDENTITY_INSTALL_ACQUIRED_KEY)
+}
+
+export function isAcquiredInstallHandoffForTarget(marker, { targetClientId, targetOrigin }) {
+  return Boolean(
+    marker &&
+      typeof marker === 'object' &&
+      !Array.isArray(marker) &&
+      marker.version === 1 &&
+      marker.targetClientId === targetClientId &&
+      marker.targetOrigin === targetOrigin &&
+      CLIENT_ID_PATTERN.test(marker.targetClientId || '') &&
+      normalizeExactOrigin(marker.targetOrigin) === marker.targetOrigin &&
+      Number.isFinite(Number(marker.acquiredAt)),
   )
 }
 

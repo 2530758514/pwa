@@ -8,12 +8,23 @@ import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { usePwaShellNotifications } from '@/composables/pwa/usePwaShellNotifications'
 import {
+  readAcquiredInstallHandoff,
+  readCompletedInstallHandoff,
+  isValidPendingInstallHandoff,
+  readPendingInstallHandoff,
+} from '@/shared/auth/playerIdentityFlow'
+import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
+import {
   handlePlayerIdentityIframeMessage,
   postPlayerIdentityParentReady,
   resetPlayerIdentityIframeBridge,
 } from '@/services/playerIdentityIframeBridge'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { isPwaH5AppReadyMessage } from '@/shared/pwa/iframeLifecycleMessages'
+import {
+  pinInstallIdentityUrlToOrigin,
+  resolveInstallIdentityTargetOrigin,
+} from '@/shared/pwa/installIdentityHandoff'
 import {
   H5_NOTIFICATION_NAVIGATE,
   H5_NOTIFICATION_NAVIGATION_APPLIED,
@@ -57,8 +68,20 @@ const {
 const iframeRef = useTemplateRef('iframe')
 const iframeReady = shallowRef(false)
 const iframeAppReady = shallowRef(false)
+const launchBaseIframeSrc = shallowRef('')
 const pendingNotificationNavigation = shallowRef(null)
 const activeNotificationLocation = shallowRef('')
+const playerIdentityEnabled = isPlayerIdentityEnabled()
+const pendingInstallHandoff = readPendingInstallHandoff()
+const installedIdentityTargetOrigin = playerIdentityEnabled
+  ? resolveInstallIdentityTargetOrigin({
+      completed: readCompletedInstallHandoff(),
+      pending: isValidPendingInstallHandoff(pendingInstallHandoff)
+        ? pendingInstallHandoff
+        : null,
+      acquired: readAcquiredInstallHandoff(),
+    })
+  : ''
 let pendingViewportSync = 0
 let iframeReadyFallbackTimer = 0
 let notificationPermissionTimer = 0
@@ -178,12 +201,29 @@ const detailH5Url = computed(() =>
   String(props.pwaInfo?.h5_url || props.pwaInfo?.h5Url || '').trim(),
 )
 
-const baseIframeSrc = computed(() => {
+function lockLaunchBaseIframeSrc() {
+  if (launchBaseIframeSrc.value) return
+
   const fallbackUrl = props.loading ? '' : String(H5_APP_URL || '').trim()
   const sourceUrl = detailH5Url.value || fallbackUrl
+  if (!sourceUrl) return
 
-  return sourceUrl ? resolveIframeUrl(sourceUrl, props.pwaInfo) : ''
-})
+  const identitySourceUrl = pinInstallIdentityUrlToOrigin(sourceUrl, {
+    targetOrigin: installedIdentityTargetOrigin,
+    baseOrigin: window.location.origin,
+  })
+  if (!identitySourceUrl) return
+
+  launchBaseIframeSrc.value = resolveIframeUrl(identitySourceUrl, props.pwaInfo)
+}
+
+watch(
+  [detailH5Url, () => props.loading, () => props.pwaInfo],
+  lockLaunchBaseIframeSrc,
+  { immediate: true },
+)
+
+const baseIframeSrc = computed(() => launchBaseIframeSrc.value)
 
 function resolveNotificationIframeUrl(sourceUrl, location) {
   if (!sourceUrl || !location || typeof window === 'undefined') return sourceUrl
@@ -285,7 +325,7 @@ function revealIframe() {
 
 function scheduleIframeReadyFallback() {
   clearIframeReadyFallback()
-  if (iframeAppReady.value) return
+  if (iframeAppReady.value || playerIdentityEnabled) return
 
   iframeReadyFallbackTimer = window.setTimeout(() => {
     iframeReadyFallbackTimer = 0

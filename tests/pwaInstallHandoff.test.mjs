@@ -72,7 +72,7 @@ test('installed shell defers notification permission until the H5 app is ready',
   assert.doesNotMatch(appReadySource, /completePlayerIdentityInstallHandoff/)
 })
 
-test('installed shell never starts center authorization and clears a package only after receipt', () => {
+test('installed shell distinguishes code-acquired installs from legacy installs', () => {
   const resolverStart = serviceSource.indexOf('async function resolveHandoffRequestInternal')
   const resolverEnd = serviceSource.indexOf('\nexport const playerIdentityService', resolverStart)
   const resolverSource = serviceSource.slice(resolverStart, resolverEnd)
@@ -81,11 +81,44 @@ test('installed shell never starts center authorization and clears a package onl
   assert.match(resolverSource, /identity_install_handoff_missing/)
   assert.match(
     resolverSource,
-    /readInstallHandoffFlow\(\) \|\| readCompletedInstallHandoff\(\)/,
+    /readInstallHandoffFlow\(\)[\s\S]*readAcquiredInstallHandoff\(\)[\s\S]*readCompletedInstallHandoff\(\)/,
+  )
+  assert.match(serviceSource, /writeAcquiredInstallHandoff\(\{/)
+  assert.match(
+    serviceSource,
+    /writeCompletedInstallHandoff\(\{[\s\S]*clearPendingInstallHandoff\(\)[\s\S]*clearAcquiredInstallHandoff\(\)/,
+  )
+  assert.match(
+    resolverSource,
+    /if \(!isValidPendingInstallHandoff\(pendingInstallHandoff\)\) \{\s+clearPendingInstallHandoff\(\)/,
   )
   assert.match(bridgeSource, /parsePlayerIdentityHandoffConsumed\(event\.data\)/)
   assert.match(bridgeSource, /completeInstallHandoff\(consumed\)/)
   assert.doesNotMatch(shellSource, /completePlayerIdentityInstallHandoffForIframe/)
+})
+
+test('landing and installed startup cannot remain globally blocked after a recoverable identity error', () => {
+  assert.match(appSource, /if \(isPlayerIdentityNavigationError\(error\)\) return/)
+  assert.match(
+    appSource,
+    /catch \(error\) \{\s+if \(isPlayerIdentityNavigationError\(error\)\) return\s+await showReadySurface\(\)\s+void loadPwaInfo\(\{ background: true \}\)/,
+  )
+  assert.doesNotMatch(appSource, /if \(isPlayerIdentityError\(error\)\) return/)
+})
+
+test('landing discards an unusable acquired package before starting a fresh center flow', () => {
+  const prepareStart = serviceSource.indexOf('async function prepareInstallHandoffInternal')
+  const prepareEnd = serviceSource.indexOf('\nasync function resolveHandoffRequestInternal', prepareStart)
+  const prepareSource = serviceSource.slice(prepareStart, prepareEnd)
+
+  assert.match(
+    prepareSource,
+    /if \(pending\) \{\s+clearPendingInstallHandoff\(\)\s+clearAcquiredInstallHandoff\(\)\s+clearInstallHandoffFlow\(\)/,
+  )
+  assert.match(
+    prepareSource,
+    /const acquired = readAcquiredInstallHandoff\(\)[\s\S]*if \(acquired\) \{\s+clearAcquiredInstallHandoff\(\)/,
+  )
 })
 
 test('installed shell retries a strict parent-ready message until H5 starts the handoff', () => {
@@ -101,7 +134,33 @@ test('installed shell retries a strict parent-ready message until H5 starts the 
   assert.doesNotMatch(bridgeSource, /postMessage\([^\n]+, ['"]\*['"]\)/)
 })
 
-test('Android shows a persistent Open popup and redirects the landing tab to H5 after Open', () => {
+test('installed shell pins one matching H5 iframe URL for the entire launch', () => {
+  assert.match(shellSource, /const launchBaseIframeSrc = shallowRef\(''\)/)
+  assert.match(shellSource, /resolveInstallIdentityTargetOrigin\(\{/)
+  assert.match(shellSource, /completed: readCompletedInstallHandoff\(\)/)
+  assert.match(shellSource, /isValidPendingInstallHandoff\(pendingInstallHandoff\)/)
+  assert.match(shellSource, /function lockLaunchBaseIframeSrc\(\)/)
+  assert.match(
+    shellSource,
+    /if \(launchBaseIframeSrc\.value\) return[\s\S]*pinInstallIdentityUrlToOrigin\(sourceUrl/,
+  )
+  assert.match(
+    shellSource,
+    /launchBaseIframeSrc\.value = resolveIframeUrl\(identitySourceUrl, props\.pwaInfo\)/,
+  )
+  assert.match(shellSource, /\{ immediate: true \}/)
+})
+
+test('identity-enabled shell never reveals an unauthenticated iframe on a timer', () => {
+  const fallbackStart = shellSource.indexOf('function scheduleIframeReadyFallback()')
+  const fallbackEnd = shellSource.indexOf('\nfunction reload()', fallbackStart)
+  const fallbackSource = shellSource.slice(fallbackStart, fallbackEnd)
+
+  assert.match(fallbackSource, /if \(iframeAppReady\.value \|\| playerIdentityEnabled\) return/)
+  assert.match(fallbackSource, /revealIframe\(\)/)
+})
+
+test('Android shows a persistent Open popup and falls back to H5 only while landing stays visible', () => {
   const openHandlerStart = installPageSource.indexOf('function handleInstalledOpen()')
   const openHandlerEnd = installPageSource.indexOf(
     'function handleInstalledPopupClose()',
@@ -116,7 +175,7 @@ test('Android shows a persistent Open popup and redirects the landing tab to H5 
   const launchHandlerSource = installPageSource.slice(launchHandlerStart, launchHandlerEnd)
 
   assert.match(installPageSource, /const INSTALLED_OPEN_POPUP_DELAY_MS = 12000/)
-  assert.match(installPageSource, /const OPEN_H5_REDIRECT_DELAY_MS = 2000/)
+  assert.match(installPageSource, /const OPEN_H5_FALLBACK_DELAY_MS = 5000/)
   assert.match(installPageSource, /const OPEN_APP_RETRY_INTERVAL_MS = 1000/)
   assert.doesNotMatch(installPageSource, /scheduleAndroidPostInstallAutoOpenRetries/)
   assert.doesNotMatch(installPageSource, /schedulePostInstallH5Fallback/)
@@ -124,16 +183,16 @@ test('Android shows a persistent Open popup and redirects the landing tab to H5 
   assert.match(openHandlerSource, /tryOpenInstalledPwaFromLanding\(\)/)
   assert.match(
     openHandlerSource,
-    /scheduleOpenH5Redirect\(\)[\s\S]*tryOpenInstalledPwaFromLanding\(\)/,
+    /scheduleOpenH5Fallback\(\)[\s\S]*tryOpenInstalledPwaFromLanding\(\)/,
   )
   assert.doesNotMatch(openHandlerSource, /showInstalledOpenPopup\.value = false/)
   assert.doesNotMatch(openHandlerSource, /clearPendingInstalledOpenPopup\(\)/)
   assert.match(installPageSource, /window\.location\.replace\(targetUrl\)/)
-  assert.match(installPageSource, /const OPEN_H5_REDIRECT_SESSION_KEY =/)
-  assert.match(installPageSource, /function restorePendingOpenH5Redirect\(\)/)
+  assert.match(installPageSource, /const OPEN_H5_FALLBACK_SESSION_KEY =/)
+  assert.match(installPageSource, /function restorePendingOpenH5Fallback\(\)/)
   assert.match(
     installPageSource,
-    /function handlePostInstallPageVisible\(\) \{[\s\S]*runPendingOpenH5Redirect\(\)/,
+    /function handlePostInstallPageVisible\(\) \{[\s\S]*document\.visibilityState === 'hidden'[\s\S]*clearPendingOpenH5Fallback\(\)[\s\S]*runPendingOpenH5Fallback\(\)/,
   )
   assert.match(launchHandlerSource, /fallback: false/)
   assert.match(launchHandlerSource, /intentBrowserFallback: false/)
@@ -173,8 +232,8 @@ test('Android shows a persistent Open popup and redirects the landing tab to H5 
   assert.doesNotMatch(launchSource, /launchLeftPage = false/)
 })
 
-test('Open H5 redirect resets on repeated clicks and catches up after a frozen background page', () => {
-  const storageKey = 'pwa:open-h5-redirect-pending'
+test('Open H5 fallback resets on repeated clicks and redirects when the wake attempt stays visible', () => {
+  const storageKey = 'pwa:open-h5-fallback-pending-v2'
   const storage = createMemoryStorage()
   const timers = new Map()
   const clearedTimers = []
@@ -184,7 +243,7 @@ test('Open H5 redirect resets on repeated clicks and catches up after a frozen b
 
   const createController = () =>
     createDelayedRedirect({
-      delayMs: 2000,
+      delayMs: 5000,
       storageKey,
       storage,
       resolveTargetUrl: () => 'https://h5.example.com/?fbclid=click-1',
@@ -200,23 +259,49 @@ test('Open H5 redirect resets on repeated clicks and catches up after a frozen b
 
   const firstController = createController()
   assert.equal(firstController.schedule(), true)
-  assert.equal(timers.get(1).timeout, 2000)
+  assert.equal(timers.get(1).timeout, 5000)
 
   currentTime = 1500
   assert.equal(firstController.schedule(), true)
   assert.deepEqual(clearedTimers, [1])
-  assert.equal(JSON.parse(storage.getItem(storageKey)).dueAt, 3500)
+  assert.equal(JSON.parse(storage.getItem(storageKey)).dueAt, 6500)
 
-  firstController.dispose()
-  currentTime = 5000
-
-  const restoredController = createController()
-  assert.equal(restoredController.restore(), true)
-  assert.equal(timers.get(3).timeout, 0)
-  timers.get(3).callback()
+  currentTime = 6500
+  timers.get(2).callback()
 
   assert.deepEqual(navigations, ['https://h5.example.com/?fbclid=click-1'])
   assert.equal(storage.getItem(storageKey), null)
+})
+
+test('Open H5 fallback is cancelled when the PWA wake sends the page to the background', () => {
+  const storageKey = 'pwa:open-h5-fallback-pending-v2'
+  const storage = createMemoryStorage()
+  const navigations = []
+  let scheduledCallback = null
+
+  const controller = createDelayedRedirect({
+    delayMs: 5000,
+    storageKey,
+    storage,
+    resolveTargetUrl: () => 'https://h5.example.com/',
+    navigate: (targetUrl) => navigations.push(targetUrl),
+    now: () => 1000,
+    setTimer: (callback) => {
+      scheduledCallback = callback
+      return 1
+    },
+    clearTimer: () => {
+      scheduledCallback = null
+    },
+  })
+
+  assert.equal(controller.schedule(), true)
+  controller.clearPending()
+
+  assert.equal(scheduledCallback, null)
+  assert.equal(storage.getItem(storageKey), null)
+  assert.equal(controller.restore(), false)
+  assert.deepEqual(navigations, [])
 })
 
 test('PWA authorization uses its own Origin as the source Client', () => {

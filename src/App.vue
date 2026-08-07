@@ -15,7 +15,10 @@ import {
 } from '@/shared/pwa/installIdentityHandoff'
 import { shouldRenderPwaSurfaceImmediately } from '@/shared/pwa/pwaStartupPolicy'
 import { dismissBootstrapLoading } from '@/shared/ui/bootstrapLoading'
-import { isPlayerIdentityError, playerIdentityService } from '@/services/playerIdentity'
+import {
+  isPlayerIdentityNavigationError,
+  playerIdentityService,
+} from '@/services/playerIdentity'
 import { initializePwaNotificationClickTracking } from '@/services/pwaNotificationClickTracking'
 
 const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo({
@@ -55,11 +58,18 @@ onMounted(async () => {
   displayModeQuery?.addEventListener?.('change', syncStandaloneMode)
   window.addEventListener('pageshow', syncStandaloneMode)
 
+  let identityResult = null
+  if (playerIdentityEnabled) {
+    try {
+      identityResult = await playerIdentityService.initialize()
+    } catch (error) {
+      if (isPlayerIdentityNavigationError(error)) return
+    }
+  }
+
+  capturePwaLandingAttribution()
+
   try {
-    const identityResult = playerIdentityEnabled
-      ? await playerIdentityService.initialize()
-      : null
-    capturePwaLandingAttribution()
     const requiresInstallHandoff =
       playerIdentityEnabled &&
       !isStandalone.value &&
@@ -94,8 +104,9 @@ onMounted(async () => {
 
     await showReadySurface()
   } catch (error) {
-    if (isPlayerIdentityError(error)) return
-    // Keep the neutral loading surface for unexpected bootstrap failures too.
+    if (isPlayerIdentityNavigationError(error)) return
+    await showReadySurface()
+    void loadPwaInfo({ background: true })
   }
 })
 

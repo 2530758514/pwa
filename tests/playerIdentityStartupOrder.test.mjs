@@ -36,7 +36,10 @@ test('uses the global identity switch for callback initialization and install ha
   const bootstrap = getMountedBootstrapSource()
 
   assert.match(mainSource, /if \(isPlayerIdentityEnabled\(\)\)/)
-  assert.match(bootstrap, /const identityResult = playerIdentityEnabled/)
+  assert.match(
+    bootstrap,
+    /let identityResult = null\s+if \(playerIdentityEnabled\) \{[\s\S]*playerIdentityService\.initialize\(\)/,
+  )
   assert.match(bootstrap, /const requiresInstallHandoff =\s*playerIdentityEnabled/)
 })
 

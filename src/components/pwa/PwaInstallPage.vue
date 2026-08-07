@@ -55,7 +55,7 @@ const INSTALL_PROGRESS_STEP_MS =
 const INSTALLED_OPEN_POPUP_DELAY_MS = 12000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
-const OPEN_H5_REDIRECT_DELAY_MS = 2000
+const OPEN_H5_FALLBACK_DELAY_MS = 5000
 const OPEN_APP_RETRY_WINDOW_MS = 5000
 const OPEN_APP_RETRY_INTERVAL_MS = 1000
 const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
@@ -63,7 +63,7 @@ const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
   0,
 )
 const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
-const OPEN_H5_REDIRECT_SESSION_KEY = 'pwa:open-h5-redirect-pending'
+const OPEN_H5_FALLBACK_SESSION_KEY = 'pwa:open-h5-fallback-pending-v2'
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
 const OPEN_BROWSER_USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
@@ -400,7 +400,7 @@ function redirectToH5Page() {
   if (!targetUrl) return false
 
   clearOpenAppAttempt()
-  openH5RedirectController?.clearPending()
+  clearPendingOpenH5Fallback()
   window.location.href = targetUrl
 
   return true
@@ -419,8 +419,8 @@ function getOpenH5RedirectController() {
   }
 
   openH5RedirectController = createDelayedRedirect({
-    delayMs: OPEN_H5_REDIRECT_DELAY_MS,
-    storageKey: OPEN_H5_REDIRECT_SESSION_KEY,
+    delayMs: OPEN_H5_FALLBACK_DELAY_MS,
+    storageKey: OPEN_H5_FALLBACK_SESSION_KEY,
     storage: redirectStorage,
     resolveTargetUrl: resolveH5RedirectUrl,
     navigate: (targetUrl) => {
@@ -434,15 +434,19 @@ function getOpenH5RedirectController() {
   return openH5RedirectController
 }
 
-function runPendingOpenH5Redirect() {
+function clearPendingOpenH5Fallback() {
+  openH5RedirectController?.clearPending()
+}
+
+function runPendingOpenH5Fallback() {
   return getOpenH5RedirectController()?.runIfDue() === true
 }
 
-function scheduleOpenH5Redirect() {
+function scheduleOpenH5Fallback() {
   return getOpenH5RedirectController()?.schedule() === true
 }
 
-function restorePendingOpenH5Redirect() {
+function restorePendingOpenH5Fallback() {
   getOpenH5RedirectController()?.restore()
 }
 
@@ -688,8 +692,14 @@ function restorePendingInstalledOpenPopup() {
 }
 
 function handlePostInstallPageVisible() {
-  if (typeof document === 'undefined' || document.visibilityState === 'hidden') return
-  if (runPendingOpenH5Redirect()) return
+  if (typeof document === 'undefined') return
+
+  if (document.visibilityState === 'hidden') {
+    clearPendingOpenH5Fallback()
+    return
+  }
+
+  if (runPendingOpenH5Fallback()) return
   if (!installedOpenPopupPending || postInstallActionStarted) return
 
   if (Date.now() >= installedOpenPopupDueAt) {
@@ -700,7 +710,7 @@ function handlePostInstallPageVisible() {
 function handleInstalledOpen() {
   postInstallOpenRequested.value = true
   resetInstallLoadingState()
-  scheduleOpenH5Redirect()
+  scheduleOpenH5Fallback()
   tryOpenInstalledPwaFromLanding()
 }
 
@@ -1004,7 +1014,7 @@ function handlePopupDownload(controller) {
 onMounted(() => {
   document.addEventListener('visibilitychange', handlePostInstallPageVisible)
   window.addEventListener('pageshow', handlePostInstallPageVisible)
-  restorePendingOpenH5Redirect()
+  restorePendingOpenH5Fallback()
   restorePendingInstalledOpenPopup()
 
   if (isAndroidPwaInstallDevice.value) {
@@ -1055,7 +1065,7 @@ watch(showOpenBrowserGuide, (visible) => {
 watch(h5Link, (targetUrl) => {
   if (!targetUrl) return
 
-  restorePendingOpenH5Redirect()
+  restorePendingOpenH5Fallback()
 })
 </script>
 

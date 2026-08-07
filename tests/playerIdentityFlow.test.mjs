@@ -6,16 +6,19 @@ import {
   clearPendingInstallHandoff,
   createAutomaticClientId,
   createPkceChallenge,
+  isAcquiredInstallHandoffForTarget,
   isCompletedInstallHandoffForTarget,
   isValidHandoffFlow,
   isValidInstallHandoffFlow,
   isValidPendingInstallHandoff,
   parseHandoffCallbackFragment,
   randomBase64url,
+  readAcquiredInstallHandoff,
   readCompletedInstallHandoff,
   readHandoffFlow,
   readInstallHandoffFlow,
   readPendingInstallHandoff,
+  writeAcquiredInstallHandoff,
   writeCompletedInstallHandoff,
   writeHandoffFlow,
   writeInstallHandoffFlow,
@@ -33,6 +36,8 @@ import { isPwaH5AppReadyMessage } from '../src/shared/pwa/iframeLifecycleMessage
 import {
   isAndroidFacebookInAppBrowserRuntime,
   isAndroidInstallIdentityHandoffRuntime,
+  pinInstallIdentityUrlToOrigin,
+  resolveInstallIdentityTargetOrigin,
   resolvePwaH5IdentityOrigin,
 } from '../src/shared/pwa/installIdentityHandoff.js'
 
@@ -76,6 +81,36 @@ test('derives the source client id from the exact PWA Origin', async () => {
   await assert.rejects(
     createAutomaticClientId('https://pwa.example.com/path'),
     /identity_client_origin_invalid/,
+  )
+})
+
+test('pins an installed launch to the durable completed H5 identity Origin', () => {
+  assert.equal(
+    resolveInstallIdentityTargetOrigin({
+      pending: { targetOrigin: 'https://pending.example.com' },
+      acquired: { targetOrigin: 'https://acquired.example.com' },
+      completed: { targetOrigin: 'https://completed.example.com' },
+    }),
+    'https://completed.example.com',
+  )
+  assert.equal(
+    resolveInstallIdentityTargetOrigin({
+      acquired: { targetOrigin: 'https://acquired.example.com/path' },
+      completed: { targetOrigin: 'https://completed.example.com' },
+    }),
+    'https://completed.example.com',
+  )
+  assert.equal(
+    resolveInstallIdentityTargetOrigin({ completed: { targetOrigin: 'not-an-origin' } }),
+    '',
+  )
+
+  assert.equal(
+    pinInstallIdentityUrlToOrigin('https://rotated.example.com/game?fbclid=click-1#home', {
+      targetOrigin: 'https://completed.example.com',
+      baseOrigin: 'https://pwa.example.com',
+    }),
+    'https://completed.example.com/game?fbclid=click-1#home',
   )
 })
 
@@ -355,6 +390,19 @@ test('persists the complete one-time install exchange package in Android localSt
     writePendingInstallHandoff(pending)
     assert.equal(isValidPendingInstallHandoff(readPendingInstallHandoff(), now), true)
     assert.equal('token' in readPendingInstallHandoff(), false)
+
+    const acquiredMarker = {
+      version: 1,
+      targetClientId: H5_CLIENT_ID,
+      targetOrigin: 'https://h5.example.com',
+      acquiredAt: now,
+    }
+    writeAcquiredInstallHandoff(acquiredMarker)
+    assert.equal(
+      isAcquiredInstallHandoffForTarget(readAcquiredInstallHandoff(), acquiredMarker),
+      true,
+    )
+    assert.equal('grant' in readAcquiredInstallHandoff(), false)
 
     const marker = {
       version: 2,
