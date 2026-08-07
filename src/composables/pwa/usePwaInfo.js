@@ -4,8 +4,13 @@ import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttri
 import { setPwaIdRequestHeader } from '@/shared/api/http'
 import { applyStoredPwaManifestUrl } from '@/shared/pwa/manifest'
 import { readPwaInfoCache } from '@/shared/pwa/pwaInfoCache'
+import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
 
-const cachedPwaInfo = readPwaInfoCache()?.pwaInfo || {}
+const cachedPwaInfo = (
+  resolveIsPwaStandalone()
+    ? readPwaInfoCache({ maxAgeMs: Number.POSITIVE_INFINITY })
+    : readPwaInfoCache()
+)?.pwaInfo || {}
 const pwaInfo = shallowRef(cachedPwaInfo)
 const loading = shallowRef(false)
 const refreshing = shallowRef(false)

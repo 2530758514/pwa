@@ -58,3 +58,19 @@ test('starts notification click requests only after identity and PWA info are re
   assert.ok(loadedReadyIndex > pwaInfoIndex)
   assert.doesNotMatch(mainSource, /initializePwaNotificationClickTracking/)
 })
+
+test('defers cached standalone detail refresh until the H5 iframe is ready', () => {
+  const bootstrap = getMountedBootstrapSource()
+  const readyHandlerStart = appSource.indexOf('function handleStandaloneAppReady()')
+  const readyHandlerEnd = appSource.indexOf('\n}', readyHandlerStart) + 2
+  const readyHandler = appSource.slice(readyHandlerStart, readyHandlerEnd)
+
+  assert.match(
+    bootstrap,
+    /if \(isStandalone\.value\) \{\s+refreshPwaInfoAfterStandaloneReady = true\s+\}[\s\S]*await showReadySurface\(\)[\s\S]*if \(!isStandalone\.value\) \{\s+void loadPwaInfo\(\{ background: true \}\)/,
+  )
+  assert.match(
+    readyHandler,
+    /dismissBootstrapLoading\(\)[\s\S]*refreshPwaInfoAfterStandaloneReady = false[\s\S]*loadPwaInfo\(\{ background: true \}\)/,
+  )
+})

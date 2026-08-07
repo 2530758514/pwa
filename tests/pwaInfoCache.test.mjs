@@ -40,3 +40,19 @@ test('rejects expired or empty PWA detail cache records', () => {
     null,
   )
 })
+
+test('allows an installed PWA to reuse an expired detail record as a startup fallback', () => {
+  const store = createMemoryStore()
+  const pwaInfo = { pwaId: 17, h5Url: 'https://h5.example.com/' }
+
+  writePwaInfoCache(pwaInfo, { store, now: 1000 })
+
+  assert.deepEqual(
+    readPwaInfoCache({
+      store,
+      now: 1000 + PWA_INFO_CACHE_MAX_AGE_MS + 1,
+      maxAgeMs: Number.POSITIVE_INFINITY,
+    })?.pwaInfo,
+    pwaInfo,
+  )
+})

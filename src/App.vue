@@ -28,11 +28,12 @@ const isStandalone = shallowRef(resolveIsPwaStandalone())
 const playerIdentityEnabled = isPlayerIdentityEnabled()
 const identityReady = shallowRef(!playerIdentityEnabled)
 let displayModeQuery = null
+let refreshPwaInfoAfterStandaloneReady = false
 
 function applyReadyThemeColor() {
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', isStandalone.value ? '#343d44' : '#ffffff')
+    ?.setAttribute('content', isStandalone.value ? '#272d39' : '#ffffff')
 }
 
 function syncStandaloneMode() {
@@ -51,6 +52,11 @@ async function showReadySurface() {
 
 function handleStandaloneAppReady() {
   dismissBootstrapLoading()
+
+  if (!refreshPwaInfoAfterStandaloneReady) return
+
+  refreshPwaInfoAfterStandaloneReady = false
+  void loadPwaInfo({ background: true })
 }
 
 onMounted(async () => {
@@ -84,8 +90,15 @@ onMounted(async () => {
     })
 
     if (canRenderReadySurfaceImmediately) {
+      if (isStandalone.value) {
+        refreshPwaInfoAfterStandaloneReady = true
+      }
+
       await showReadySurface()
-      void loadPwaInfo({ background: true })
+
+      if (!isStandalone.value) {
+        void loadPwaInfo({ background: true })
+      }
       return
     }
 

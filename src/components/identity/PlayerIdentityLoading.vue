@@ -43,7 +43,7 @@ function waveStyle(index) {
   align-items: center;
   justify-content: center;
   color: #fff;
-  background: #343d44;
+  background: #272d39;
 }
 
 .identity-loading__progress {
