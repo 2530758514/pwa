@@ -14,8 +14,10 @@ import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
+import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
 import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
+import { createDelayedRedirect } from '@/shared/pwa/delayedRedirect'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
 import PwaBottomNav from './PwaBottomNav.vue'
 import PwaDetailsSections from './PwaDetailsSections.vue'
@@ -50,9 +52,10 @@ const INSTALL_PROGRESS_STEP_PERCENT = 5
 const INSTALL_PROGRESS_MAX_PERCENT = 100
 const INSTALL_PROGRESS_STEP_MS =
   INSTALL_PROGRESS_DURATION_MS / (INSTALL_PROGRESS_MAX_PERCENT / INSTALL_PROGRESS_STEP_PERCENT)
-const INSTALLED_OPEN_POPUP_DELAY_MS = 15000
+const INSTALLED_OPEN_POPUP_DELAY_MS = 12000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
+const OPEN_H5_REDIRECT_DELAY_MS = 2000
 const OPEN_APP_RETRY_WINDOW_MS = 5000
 const OPEN_APP_RETRY_INTERVAL_MS = 1000
 const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
@@ -60,12 +63,34 @@ const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
   0,
 )
 const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
+const OPEN_H5_REDIRECT_SESSION_KEY = 'pwa:open-h5-redirect-pending'
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
 const OPEN_BROWSER_USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
 const OPEN_BROWSER_COPY_ACTION_SELECTOR = '[data-pwa-browser-guide-copy-action]'
 const IOS_H5_REDIRECT_PARAM = 'pwa_ios_h5_redirect'
 const IOS_H5_REDIRECT_VALUE = '1'
+const DIRECT_H5_BLOCKED_PARAM_NAMES = new Set([
+  'client_id',
+  'code',
+  'code_challenge',
+  'code_challenge_method',
+  'code_verifier',
+  'exchange_code',
+  'grant',
+  'handoff_action',
+  'handoff_grant',
+  'handoff_id',
+  'provision_code',
+  'pwa_app',
+  'pwa_launch',
+  'pwa_launch_time',
+  'request_id',
+  'source_client_id',
+  'state',
+  'target_client_id',
+  'token',
+])
 
 const {
   canPromptInstall,
@@ -109,6 +134,7 @@ let openBrowserGuideUserGestureRetryListening = false
 let toastTimer = null
 let openAppRetryTimer = null
 let openAppRetryAttemptCount = 0
+let openH5RedirectController = null
 
 const appInfo = computed(() => {
   const remote = props.pwaInfo || {}
@@ -212,9 +238,23 @@ const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length 
 
 function appendSearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
-    if (!key || targetParams.has(key)) return
+    if (
+      !key ||
+      targetParams.has(key) ||
+      DIRECT_H5_BLOCKED_PARAM_NAMES.has(key.toLowerCase())
+    ) {
+      return
+    }
 
     targetParams.append(key, value)
+  })
+}
+
+function removeBlockedDirectH5Params(targetParams) {
+  Array.from(targetParams.keys()).forEach((key) => {
+    if (DIRECT_H5_BLOCKED_PARAM_NAMES.has(key.toLowerCase())) {
+      targetParams.delete(key)
+    }
   })
 }
 
@@ -324,6 +364,8 @@ function resolvePwaRedirectUrl(url) {
 
   try {
     const targetUrl = new URL(url, window.location.origin)
+    removeBlockedDirectH5Params(targetUrl.searchParams)
+    appendStoredPwaFacebookAttributionParams(targetUrl.searchParams)
     appendSearchParams(targetUrl.searchParams, new URLSearchParams(window.location.search))
 
     const hashQueryIndex = window.location.hash.indexOf('?')
@@ -358,8 +400,50 @@ function redirectToH5Page() {
   if (!targetUrl) return false
 
   clearOpenAppAttempt()
+  openH5RedirectController?.clearPending()
   window.location.href = targetUrl
+
   return true
+}
+
+function getOpenH5RedirectController() {
+  if (typeof window === 'undefined') return null
+  if (openH5RedirectController) return openH5RedirectController
+
+  let redirectStorage = null
+
+  try {
+    redirectStorage = window.sessionStorage
+  } catch {
+    // The in-memory timer remains available when session storage is blocked.
+  }
+
+  openH5RedirectController = createDelayedRedirect({
+    delayMs: OPEN_H5_REDIRECT_DELAY_MS,
+    storageKey: OPEN_H5_REDIRECT_SESSION_KEY,
+    storage: redirectStorage,
+    resolveTargetUrl: resolveH5RedirectUrl,
+    navigate: (targetUrl) => {
+      clearOpenAppAttempt()
+      window.location.replace(targetUrl)
+    },
+    setTimer: (callback, timeout) => window.setTimeout(callback, timeout),
+    clearTimer: (timerId) => window.clearTimeout(timerId),
+  })
+
+  return openH5RedirectController
+}
+
+function runPendingOpenH5Redirect() {
+  return getOpenH5RedirectController()?.runIfDue() === true
+}
+
+function scheduleOpenH5Redirect() {
+  return getOpenH5RedirectController()?.schedule() === true
+}
+
+function restorePendingOpenH5Redirect() {
+  getOpenH5RedirectController()?.restore()
 }
 
 function clearOpenAppAttempt() {
@@ -605,6 +689,7 @@ function restorePendingInstalledOpenPopup() {
 
 function handlePostInstallPageVisible() {
   if (typeof document === 'undefined' || document.visibilityState === 'hidden') return
+  if (runPendingOpenH5Redirect()) return
   if (!installedOpenPopupPending || postInstallActionStarted) return
 
   if (Date.now() >= installedOpenPopupDueAt) {
@@ -615,6 +700,7 @@ function handlePostInstallPageVisible() {
 function handleInstalledOpen() {
   postInstallOpenRequested.value = true
   resetInstallLoadingState()
+  scheduleOpenH5Redirect()
   tryOpenInstalledPwaFromLanding()
 }
 
@@ -918,6 +1004,7 @@ function handlePopupDownload(controller) {
 onMounted(() => {
   document.addEventListener('visibilitychange', handlePostInstallPageVisible)
   window.addEventListener('pageshow', handlePostInstallPageVisible)
+  restorePendingOpenH5Redirect()
   restorePendingInstalledOpenPopup()
 
   if (isAndroidPwaInstallDevice.value) {
@@ -940,6 +1027,8 @@ onBeforeUnmount(() => {
   clearPostInstallActionTimer()
   clearInstallProgressTimer()
   clearOpenAppAttempt()
+  openH5RedirectController?.dispose()
+  openH5RedirectController = null
   clearOpenBrowserAutoOpenTimer()
   teardownOpenBrowserUserGestureRetry()
   teardownQrCode()
@@ -961,6 +1050,12 @@ watch(showOpenBrowserGuide, (visible) => {
   if (!shouldLockOpenBrowserGuide.value) return
 
   openExternalBrowserGuide({ autoOpen: true })
+})
+
+watch(h5Link, (targetUrl) => {
+  if (!targetUrl) return
+
+  restorePendingOpenH5Redirect()
 })
 </script>
 

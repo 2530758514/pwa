@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+import { createDelayedRedirect } from '../src/shared/pwa/delayedRedirect.js'
+
 const serviceSource = readFileSync(
   new URL('../src/services/playerIdentity.js', import.meta.url),
   'utf8',
@@ -31,6 +33,22 @@ const launchSource = readFileSync(
   new URL('../src/composables/pwa/usePwaLaunchAction.js', import.meta.url),
   'utf8',
 )
+
+function createMemoryStorage(initialState = {}) {
+  const values = new Map(Object.entries(initialState))
+
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key) : null
+    },
+    removeItem(key) {
+      values.delete(key)
+    },
+    setItem(key, value) {
+      values.set(key, String(value))
+    },
+  }
+}
 
 test('Android landing startup prepares identity before the native install action', () => {
   assert.doesNotMatch(installSource, /playerIdentity|handoff|manifestOverrides/)
@@ -83,7 +101,7 @@ test('installed shell retries a strict parent-ready message until H5 starts the 
   assert.doesNotMatch(bridgeSource, /postMessage\([^\n]+, ['"]\*['"]\)/)
 })
 
-test('Android shows a persistent Open popup without falling back to H5', () => {
+test('Android shows a persistent Open popup and redirects the landing tab to H5 after Open', () => {
   const openHandlerStart = installPageSource.indexOf('function handleInstalledOpen()')
   const openHandlerEnd = installPageSource.indexOf(
     'function handleInstalledPopupClose()',
@@ -97,14 +115,26 @@ test('Android shows a persistent Open popup without falling back to H5', () => {
   )
   const launchHandlerSource = installPageSource.slice(launchHandlerStart, launchHandlerEnd)
 
-  assert.match(installPageSource, /const INSTALLED_OPEN_POPUP_DELAY_MS = 15000/)
+  assert.match(installPageSource, /const INSTALLED_OPEN_POPUP_DELAY_MS = 12000/)
+  assert.match(installPageSource, /const OPEN_H5_REDIRECT_DELAY_MS = 2000/)
   assert.match(installPageSource, /const OPEN_APP_RETRY_INTERVAL_MS = 1000/)
   assert.doesNotMatch(installPageSource, /scheduleAndroidPostInstallAutoOpenRetries/)
   assert.doesNotMatch(installPageSource, /schedulePostInstallH5Fallback/)
   assert.doesNotMatch(installPageSource, /usePwaLaunchReturnFallback/)
   assert.match(openHandlerSource, /tryOpenInstalledPwaFromLanding\(\)/)
+  assert.match(
+    openHandlerSource,
+    /scheduleOpenH5Redirect\(\)[\s\S]*tryOpenInstalledPwaFromLanding\(\)/,
+  )
   assert.doesNotMatch(openHandlerSource, /showInstalledOpenPopup\.value = false/)
   assert.doesNotMatch(openHandlerSource, /clearPendingInstalledOpenPopup\(\)/)
+  assert.match(installPageSource, /window\.location\.replace\(targetUrl\)/)
+  assert.match(installPageSource, /const OPEN_H5_REDIRECT_SESSION_KEY =/)
+  assert.match(installPageSource, /function restorePendingOpenH5Redirect\(\)/)
+  assert.match(
+    installPageSource,
+    /function handlePostInstallPageVisible\(\) \{[\s\S]*runPendingOpenH5Redirect\(\)/,
+  )
   assert.match(launchHandlerSource, /fallback: false/)
   assert.match(launchHandlerSource, /intentBrowserFallback: false/)
   assert.doesNotMatch(launchHandlerSource, /fallbackUrl|fallbackDelay|fallbackTopLevel/)
@@ -141,6 +171,52 @@ test('Android shows a persistent Open popup without falling back to H5', () => {
     /function handleLaunchDetected\(\) \{\s+cleanup\(\)\s+options\.onLaunchDetected\?\.\(\)/,
   )
   assert.doesNotMatch(launchSource, /launchLeftPage = false/)
+})
+
+test('Open H5 redirect resets on repeated clicks and catches up after a frozen background page', () => {
+  const storageKey = 'pwa:open-h5-redirect-pending'
+  const storage = createMemoryStorage()
+  const timers = new Map()
+  const clearedTimers = []
+  const navigations = []
+  let currentTime = 1000
+  let nextTimerId = 0
+
+  const createController = () =>
+    createDelayedRedirect({
+      delayMs: 2000,
+      storageKey,
+      storage,
+      resolveTargetUrl: () => 'https://h5.example.com/?fbclid=click-1',
+      navigate: (targetUrl) => navigations.push(targetUrl),
+      now: () => currentTime,
+      setTimer: (callback, timeout) => {
+        nextTimerId += 1
+        timers.set(nextTimerId, { callback, timeout })
+        return nextTimerId
+      },
+      clearTimer: (timerId) => clearedTimers.push(timerId),
+    })
+
+  const firstController = createController()
+  assert.equal(firstController.schedule(), true)
+  assert.equal(timers.get(1).timeout, 2000)
+
+  currentTime = 1500
+  assert.equal(firstController.schedule(), true)
+  assert.deepEqual(clearedTimers, [1])
+  assert.equal(JSON.parse(storage.getItem(storageKey)).dueAt, 3500)
+
+  firstController.dispose()
+  currentTime = 5000
+
+  const restoredController = createController()
+  assert.equal(restoredController.restore(), true)
+  assert.equal(timers.get(3).timeout, 0)
+  timers.get(3).callback()
+
+  assert.deepEqual(navigations, ['https://h5.example.com/?fbclid=click-1'])
+  assert.equal(storage.getItem(storageKey), null)
 })
 
 test('PWA authorization uses its own Origin as the source Client', () => {

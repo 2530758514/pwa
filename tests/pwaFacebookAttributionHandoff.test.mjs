@@ -8,6 +8,10 @@ const iframeShellSource = readFileSync(
   new URL('../src/components/pwa/PwaIframeShell.vue', import.meta.url),
   'utf8',
 )
+const installPageSource = readFileSync(
+  new URL('../src/components/pwa/PwaInstallPage.vue', import.meta.url),
+  'utf8',
+)
 
 test('maps only stored Facebook attribution fields to the H5 iframe query', () => {
   const params = new URLSearchParams('handoff_grant=must-not-change')
@@ -61,4 +65,30 @@ test('restores stored Facebook attribution before copying the current PWA query'
   assert.ok(storedAttributionIndex >= 0)
   assert.ok(currentQueryIndex > storedAttributionIndex)
   assert.doesNotMatch(resolveIframeUrlSource, /handoff_grant|code_verifier|token/)
+})
+
+test('restores stored Facebook attribution before redirecting the landing tab to H5', () => {
+  const start = installPageSource.indexOf('function resolvePwaRedirectUrl')
+  const end = installPageSource.indexOf('function resolveH5RedirectUrl', start)
+  const resolveRedirectUrlSource = installPageSource.slice(start, end)
+
+  const storedAttributionIndex = resolveRedirectUrlSource.indexOf(
+    'appendStoredPwaFacebookAttributionParams(targetUrl.searchParams)',
+  )
+  const currentQueryIndex = resolveRedirectUrlSource.indexOf(
+    'appendSearchParams(targetUrl.searchParams, new URLSearchParams(window.location.search))',
+  )
+
+  assert.ok(storedAttributionIndex >= 0)
+  assert.ok(currentQueryIndex > storedAttributionIndex)
+  assert.match(installPageSource, /const DIRECT_H5_BLOCKED_PARAM_NAMES = new Set\(/)
+  assert.match(resolveRedirectUrlSource, /removeBlockedDirectH5Params\(targetUrl\.searchParams\)/)
+  assert.match(
+    installPageSource,
+    /DIRECT_H5_BLOCKED_PARAM_NAMES\.has\(key\.toLowerCase\(\)\)/,
+  )
+  assert.match(installPageSource, /'handoff_grant'/)
+  assert.match(installPageSource, /'code_verifier'/)
+  assert.match(installPageSource, /'pwa_app'/)
+  assert.match(installPageSource, /'token'/)
 })
