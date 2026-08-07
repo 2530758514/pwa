@@ -56,6 +56,7 @@ const INSTALLED_OPEN_POPUP_DELAY_MS = 12000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
 const OPEN_H5_FALLBACK_DELAY_MS = 5000
+const OPEN_APP_BACKGROUND_CONFIRM_MS = 1500
 const OPEN_APP_RETRY_WINDOW_MS = 5000
 const OPEN_APP_RETRY_INTERVAL_MS = 1000
 const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
@@ -135,6 +136,7 @@ let toastTimer = null
 let openAppRetryTimer = null
 let openAppRetryAttemptCount = 0
 let openH5RedirectController = null
+let openAppBackgroundConfirmTimer = null
 
 const appInfo = computed(() => {
   const remote = props.pwaInfo || {}
@@ -446,8 +448,27 @@ function scheduleOpenH5Fallback() {
   return getOpenH5RedirectController()?.schedule() === true
 }
 
-function restorePendingOpenH5Fallback() {
-  getOpenH5RedirectController()?.restore()
+function restorePendingOpenH5Fallback(options = {}) {
+  return getOpenH5RedirectController()?.restore(options) === true
+}
+
+function clearOpenAppBackgroundConfirmation() {
+  if (!openAppBackgroundConfirmTimer || typeof window === 'undefined') return
+
+  window.clearTimeout(openAppBackgroundConfirmTimer)
+  openAppBackgroundConfirmTimer = null
+}
+
+function confirmOpenAppBackgroundLaunch() {
+  clearOpenAppBackgroundConfirmation()
+  openH5RedirectController?.dispose()
+  openAppBackgroundConfirmTimer = window.setTimeout(() => {
+    openAppBackgroundConfirmTimer = null
+
+    if (document.visibilityState === 'hidden') {
+      clearPendingOpenH5Fallback()
+    }
+  }, OPEN_APP_BACKGROUND_CONFIRM_MS)
 }
 
 function clearOpenAppAttempt() {
@@ -695,10 +716,12 @@ function handlePostInstallPageVisible() {
   if (typeof document === 'undefined') return
 
   if (document.visibilityState === 'hidden') {
-    clearPendingOpenH5Fallback()
+    confirmOpenAppBackgroundLaunch()
     return
   }
 
+  clearOpenAppBackgroundConfirmation()
+  restorePendingOpenH5Fallback()
   if (runPendingOpenH5Fallback()) return
   if (!installedOpenPopupPending || postInstallActionStarted) return
 
@@ -1014,7 +1037,7 @@ function handlePopupDownload(controller) {
 onMounted(() => {
   document.addEventListener('visibilitychange', handlePostInstallPageVisible)
   window.addEventListener('pageshow', handlePostInstallPageVisible)
-  restorePendingOpenH5Fallback()
+  restorePendingOpenH5Fallback({ immediate: true })
   restorePendingInstalledOpenPopup()
 
   if (isAndroidPwaInstallDevice.value) {
@@ -1037,6 +1060,7 @@ onBeforeUnmount(() => {
   clearPostInstallActionTimer()
   clearInstallProgressTimer()
   clearOpenAppAttempt()
+  clearOpenAppBackgroundConfirmation()
   openH5RedirectController?.dispose()
   openH5RedirectController = null
   clearOpenBrowserAutoOpenTimer()

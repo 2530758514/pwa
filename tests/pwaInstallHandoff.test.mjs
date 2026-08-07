@@ -176,6 +176,7 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
 
   assert.match(installPageSource, /const INSTALLED_OPEN_POPUP_DELAY_MS = 12000/)
   assert.match(installPageSource, /const OPEN_H5_FALLBACK_DELAY_MS = 5000/)
+  assert.match(installPageSource, /const OPEN_APP_BACKGROUND_CONFIRM_MS = 1500/)
   assert.match(installPageSource, /const OPEN_APP_RETRY_INTERVAL_MS = 1000/)
   assert.doesNotMatch(installPageSource, /scheduleAndroidPostInstallAutoOpenRetries/)
   assert.doesNotMatch(installPageSource, /schedulePostInstallH5Fallback/)
@@ -189,11 +190,16 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
   assert.doesNotMatch(openHandlerSource, /clearPendingInstalledOpenPopup\(\)/)
   assert.match(installPageSource, /window\.location\.replace\(targetUrl\)/)
   assert.match(installPageSource, /const OPEN_H5_FALLBACK_SESSION_KEY =/)
-  assert.match(installPageSource, /function restorePendingOpenH5Fallback\(\)/)
+  assert.match(installPageSource, /function restorePendingOpenH5Fallback\(options = \{\}\)/)
   assert.match(
     installPageSource,
-    /function handlePostInstallPageVisible\(\) \{[\s\S]*document\.visibilityState === 'hidden'[\s\S]*clearPendingOpenH5Fallback\(\)[\s\S]*runPendingOpenH5Fallback\(\)/,
+    /function handlePostInstallPageVisible\(\) \{[\s\S]*document\.visibilityState === 'hidden'[\s\S]*confirmOpenAppBackgroundLaunch\(\)[\s\S]*restorePendingOpenH5Fallback\(\)[\s\S]*runPendingOpenH5Fallback\(\)/,
   )
+  assert.match(
+    installPageSource,
+    /function confirmOpenAppBackgroundLaunch\(\) \{[\s\S]*openH5RedirectController\?\.dispose\(\)[\s\S]*document\.visibilityState === 'hidden'[\s\S]*clearPendingOpenH5Fallback\(\)/,
+  )
+  assert.match(installPageSource, /restorePendingOpenH5Fallback\(\{ immediate: true \}\)/)
   assert.match(launchHandlerSource, /fallback: false/)
   assert.match(launchHandlerSource, /intentBrowserFallback: false/)
   assert.doesNotMatch(launchHandlerSource, /fallbackUrl|fallbackDelay|fallbackTopLevel/)
@@ -265,10 +271,50 @@ test('Open H5 fallback resets on repeated clicks and redirects when the wake att
   assert.equal(firstController.schedule(), true)
   assert.deepEqual(clearedTimers, [1])
   assert.equal(JSON.parse(storage.getItem(storageKey)).dueAt, 6500)
+  assert.equal(
+    JSON.parse(storage.getItem(storageKey)).targetUrl,
+    'https://h5.example.com/?fbclid=click-1',
+  )
 
   currentTime = 6500
   timers.get(2).callback()
 
+  assert.deepEqual(navigations, ['https://h5.example.com/?fbclid=click-1'])
+  assert.equal(storage.getItem(storageKey), null)
+})
+
+test('Open H5 fallback survives a failed Intent reload without needing PWA detail again', () => {
+  const storageKey = 'pwa:open-h5-fallback-pending-v2'
+  const storage = createMemoryStorage()
+  const navigations = []
+  let currentTime = 1000
+
+  const firstController = createDelayedRedirect({
+    delayMs: 5000,
+    storageKey,
+    storage,
+    resolveTargetUrl: () => 'https://h5.example.com/?fbclid=click-1',
+    navigate: (targetUrl) => navigations.push(targetUrl),
+    now: () => currentTime,
+    setTimer: () => 1,
+    clearTimer: () => {},
+  })
+  assert.equal(firstController.schedule(), true)
+  firstController.dispose()
+
+  currentTime = 1200
+  const restoredController = createDelayedRedirect({
+    delayMs: 5000,
+    storageKey,
+    storage,
+    resolveTargetUrl: () => '',
+    navigate: (targetUrl) => navigations.push(targetUrl),
+    now: () => currentTime,
+    setTimer: () => 2,
+    clearTimer: () => {},
+  })
+
+  assert.equal(restoredController.restore({ immediate: true }), true)
   assert.deepEqual(navigations, ['https://h5.example.com/?fbclid=click-1'])
   assert.equal(storage.getItem(storageKey), null)
 })

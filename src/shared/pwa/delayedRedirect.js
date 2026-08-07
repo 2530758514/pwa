@@ -18,6 +18,7 @@ export function createDelayedRedirect(options = {}) {
 
   let timerId = null
   let dueAt = 0
+  let targetUrl = ''
 
   function clearScheduledTimer() {
     if (timerId !== null) clearTimer(timerId)
@@ -35,12 +36,13 @@ export function createDelayedRedirect(options = {}) {
   function clearPending() {
     clearScheduledTimer()
     dueAt = 0
+    targetUrl = ''
     removeStoredState()
   }
 
   function persistPending() {
     try {
-      storage?.setItem(storageKey, JSON.stringify({ dueAt }))
+      storage?.setItem(storageKey, JSON.stringify({ dueAt, targetUrl }))
     } catch {
       // The in-memory timer still completes the redirect in this page lifecycle.
     }
@@ -50,13 +52,17 @@ export function createDelayedRedirect(options = {}) {
     try {
       const state = JSON.parse(storage?.getItem(storageKey) || 'null')
       const storedDueAt = normalizeDueAt(state?.dueAt)
+      const storedTargetUrl = String(state?.targetUrl || resolveTargetUrl?.() || '').trim()
 
-      if (!storedDueAt) removeStoredState()
+      if (!storedDueAt || !storedTargetUrl) {
+        removeStoredState()
+        return null
+      }
 
-      return storedDueAt
+      return { dueAt: storedDueAt, targetUrl: storedTargetUrl }
     } catch {
       removeStoredState()
-      return 0
+      return null
     }
   }
 
@@ -75,20 +81,23 @@ export function createDelayedRedirect(options = {}) {
       return false
     }
 
-    const targetUrl = String(resolveTargetUrl?.() || '').trim()
-    if (!targetUrl) return false
+    const resolvedTargetUrl = targetUrl || String(resolveTargetUrl?.() || '').trim()
+    if (!resolvedTargetUrl) return false
 
     clearPending()
-    navigate?.(targetUrl)
+    navigate?.(resolvedTargetUrl)
     return true
   }
 
   function schedule(scheduleOptions = {}) {
-    const targetUrl = String(resolveTargetUrl?.() || '').trim()
-    if (!targetUrl) return false
+    const resolvedTargetUrl = String(
+      scheduleOptions.targetUrl || resolveTargetUrl?.() || '',
+    ).trim()
+    if (!resolvedTargetUrl) return false
 
     const requestedDueAt = normalizeDueAt(scheduleOptions.dueAt)
     dueAt = requestedDueAt || now() + Math.max(0, Number(delayMs) || 0)
+    targetUrl = resolvedTargetUrl
 
     clearScheduledTimer()
     persistPending()
@@ -100,11 +109,16 @@ export function createDelayedRedirect(options = {}) {
     return true
   }
 
-  function restore() {
-    const storedDueAt = readPending()
-    if (!storedDueAt) return false
+  function restore(restoreOptions = {}) {
+    const pending = readPending()
+    if (!pending) return false
 
-    return schedule({ dueAt: storedDueAt })
+    const scheduled = schedule({
+      dueAt: restoreOptions.immediate === true ? now() : pending.dueAt,
+      targetUrl: pending.targetUrl,
+    })
+
+    return restoreOptions.immediate === true ? runIfDue() : scheduled
   }
 
   return {
