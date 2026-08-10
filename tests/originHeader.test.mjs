@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   appendFrontendOriginHeader,
   getFrontendOrigin,
+  shouldPreserveFrontendOriginHeader,
 } from '../src/shared/api/originHeader.js'
 
 function withWindow(windowValue, callback) {
@@ -57,4 +58,29 @@ test('does not append X-Origin outside a browser runtime', () => {
   } finally {
     if (originalWindow !== undefined) globalThis.window = originalWindow
   }
+})
+
+test('only preserves X-Origin for GET pwa_h5_detail requests', () => {
+  assert.equal(
+    shouldPreserveFrontendOriginHeader({
+      method: 'GET',
+      url: '/pwa_h5_detail?campaign=1',
+    }),
+    true,
+  )
+  assert.equal(
+    shouldPreserveFrontendOriginHeader({ method: 'POST', url: '/pwa_h5_detail' }),
+    false,
+  )
+  assert.equal(
+    shouldPreserveFrontendOriginHeader({
+      method: 'GET',
+      url: 'https://untrusted.example.com/pwa_h5_detail',
+    }),
+    false,
+  )
+  assert.equal(
+    shouldPreserveFrontendOriginHeader({ method: 'GET', url: '/api/player/session/bootstrap' }),
+    false,
+  )
 })

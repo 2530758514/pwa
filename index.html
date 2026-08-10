@@ -3,7 +3,10 @@
   <head>
     <script>
       ;(function () {
+        var playerSessionEnabled =
+          String('%VITE_PLAYER_SESSION_ENABLED%').toLowerCase() === 'true'
         var playerIdentityEnabled =
+          !playerSessionEnabled &&
           String('%VITE_PLAYER_IDENTITY_ENABLED%').toLowerCase() === 'true'
 
         if (!playerIdentityEnabled) {

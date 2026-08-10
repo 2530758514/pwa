@@ -35,7 +35,7 @@ test('captures a PWA callback before loading pwa_h5_detail and the iframe', () =
 test('uses the global identity switch for callback initialization and install handoff', () => {
   const bootstrap = getMountedBootstrapSource()
 
-  assert.match(mainSource, /if \(isPlayerIdentityEnabled\(\)\)/)
+  assert.match(mainSource, /if \(!isPlayerSessionEnabled\(\) && isPlayerIdentityEnabled\(\)\)/)
   assert.match(
     bootstrap,
     /let identityResult = null\s+if \(playerIdentityEnabled\) \{[\s\S]*playerIdentityService\.initialize\(\)/,

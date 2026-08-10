@@ -19,6 +19,11 @@ import {
   postPlayerIdentityParentReady,
   resetPlayerIdentityIframeBridge,
 } from '@/services/playerIdentityIframeBridge'
+import {
+  handlePlayerSessionIframeMessage,
+  resetPlayerSessionIframeBridge,
+} from '@/services/playerSessionIframeBridge'
+import { PLAYER_SESSION_CONFIG, isPlayerSessionEnabled } from '@/shared/config/playerSession'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { isPwaH5AppReadyMessage } from '@/shared/pwa/iframeLifecycleMessages'
 import {
@@ -46,7 +51,7 @@ defineOptions({
   name: 'PwaIframeShell',
 })
 
-const emit = defineEmits(['app-ready'])
+const emit = defineEmits(['app-ready', 'player-session-refresh'])
 
 const props = defineProps({
   pwaInfo: {
@@ -56,6 +61,10 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false,
+  },
+  playerSessionStatus: {
+    type: String,
+    default: '',
   },
 })
 
@@ -71,7 +80,8 @@ const iframeAppReady = shallowRef(false)
 const launchBaseIframeSrc = shallowRef('')
 const pendingNotificationNavigation = shallowRef(null)
 const activeNotificationLocation = shallowRef('')
-const playerIdentityEnabled = isPlayerIdentityEnabled()
+const playerSessionEnabled = isPlayerSessionEnabled()
+const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()
 const pendingInstallHandoff = readPendingInstallHandoff()
 const installedIdentityTargetOrigin = playerIdentityEnabled
   ? resolveInstallIdentityTargetOrigin({
@@ -449,6 +459,20 @@ function handleIframeMessage(event) {
   }
 
   if (
+    playerSessionEnabled &&
+    handlePlayerSessionIframeMessage({
+      event,
+      iframeWindow,
+      iframeOrigin: iframeOrigin.value,
+      allowedOrigins: PLAYER_SESSION_CONFIG.iframeOrigins,
+      sessionStatus: props.playerSessionStatus,
+      onSessionReady: () => emit('player-session-refresh'),
+    })
+  ) {
+    return
+  }
+
+  if (
     handlePlayerIdentityIframeMessage({
       event,
       iframeWindow,
@@ -476,13 +500,19 @@ function handleIframeMessage(event) {
   void completeNotificationNavigation(navigation)
 }
 
-watch(iframeSrc, () => {
-  clearPlayerIdentityParentReadyRetries()
-  clearIframeReadyFallback()
-  clearNotificationPermissionTimer()
-  iframeReady.value = false
-  iframeAppReady.value = false
-})
+watch(
+  iframeSrc,
+  (sourceUrl) => {
+    clearPlayerIdentityParentReadyRetries()
+    clearIframeReadyFallback()
+    clearNotificationPermissionTimer()
+    iframeReady.value = false
+    iframeAppReady.value = false
+
+    if (sourceUrl) scheduleIframeReadyFallback()
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   syncIframeViewportHeight()
@@ -514,6 +544,7 @@ onUnmounted(() => {
   navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage)
   window.removeEventListener('message', handleIframeMessage)
   resetPlayerIdentityIframeBridge()
+  resetPlayerSessionIframeBridge()
   clearPlayerIdentityParentReadyRetries()
   clearIframeReadyFallback()
   clearNotificationPermissionTimer()

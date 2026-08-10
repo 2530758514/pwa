@@ -5,9 +5,11 @@ import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
 import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
+import { usePlayerSessionStartup } from '@/composables/pwa/usePlayerSessionStartup'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
 import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
+import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
 import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
 import {
   isAndroidInstallIdentityHandoffRuntime,
@@ -25,8 +27,15 @@ const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo
   autoLoad: false,
 })
 const isStandalone = shallowRef(resolveIsPwaStandalone())
-const playerIdentityEnabled = isPlayerIdentityEnabled()
-const identityReady = shallowRef(!playerIdentityEnabled)
+const playerSessionEnabled = isPlayerSessionEnabled()
+const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()
+const identityReady = shallowRef(!playerIdentityEnabled && !playerSessionEnabled)
+const {
+  status: playerSessionStatus,
+  canMountIframe,
+  start: startPlayerSession,
+  confirmIframeLogin,
+} = usePlayerSessionStartup()
 let displayModeQuery = null
 let refreshPwaInfoAfterStandaloneReady = false
 
@@ -59,6 +68,10 @@ function handleStandaloneAppReady() {
   void loadPwaInfo({ background: true })
 }
 
+function handlePlayerSessionRefresh() {
+  void confirmIframeLogin().catch(() => {})
+}
+
 onMounted(async () => {
   displayModeQuery = window.matchMedia?.('(display-mode: standalone)') || null
   displayModeQuery?.addEventListener?.('change', syncStandaloneMode)
@@ -74,6 +87,10 @@ onMounted(async () => {
   }
 
   capturePwaLandingAttribution()
+
+  if (playerSessionEnabled && isStandalone.value) {
+    await startPlayerSession({ pwaInfo: pwaInfo.value }).catch(() => {})
+  }
 
   try {
     const requiresInstallHandoff =
@@ -132,12 +149,14 @@ onUnmounted(() => {
 <template>
   <template v-if="identityReady">
     <PwaIframeShell
-      v-if="isStandalone"
+      v-if="isStandalone && (!playerSessionEnabled || canMountIframe)"
       :pwa-info="pwaInfo"
       :loading="loading"
+      :player-session-status="playerSessionStatus"
       @app-ready="handleStandaloneAppReady"
+      @player-session-refresh="handlePlayerSessionRefresh"
     />
-    <PwaPageSkeleton v-else-if="!hasPwaInfo" />
+    <PwaPageSkeleton v-else-if="isStandalone || !hasPwaInfo" />
     <PwaInstallPage
       v-else
       :pwa-info="pwaInfo"

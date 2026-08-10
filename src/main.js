@@ -9,9 +9,10 @@ import { initializePwaDisplayModeClasses } from './shared/pwa/displayMode'
 import { applyStoredPwaManifestUrl } from './shared/pwa/manifest'
 import { playerIdentityService } from './services/playerIdentity'
 import { isPlayerIdentityEnabled } from './shared/config/playerIdentity'
+import { isPlayerSessionEnabled } from './shared/config/playerSession'
 
 const shouldEnableVConsole = import.meta.env.DEV || import.meta.env.VITE_ENABLE_VCONSOLE === 'true'
-if (isPlayerIdentityEnabled()) {
+if (!isPlayerSessionEnabled() && isPlayerIdentityEnabled()) {
   void playerIdentityService.initialize().catch(() => {})
 }
 

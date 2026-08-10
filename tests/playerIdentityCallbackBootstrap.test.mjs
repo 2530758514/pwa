@@ -11,6 +11,7 @@ const VALID_GRANT = 'b'.repeat(64)
 
 function runCallbackBootstrap({
   identityEnabled = true,
+  sessionEnabled = false,
   pathname = '/',
   search = '',
   hash = '',
@@ -26,10 +27,9 @@ function runCallbackBootstrap({
     },
   }
 
-  const script = firstScript.replace(
-    '%VITE_PLAYER_IDENTITY_ENABLED%',
-    String(identityEnabled),
-  )
+  const script = firstScript
+    .replace('%VITE_PLAYER_IDENTITY_ENABLED%', String(identityEnabled))
+    .replace('%VITE_PLAYER_SESSION_ENABLED%', String(sessionEnabled))
 
   vm.runInNewContext(script, {
     URLSearchParams,
@@ -88,5 +88,21 @@ test('does not intercept handoff callbacks when the global identity switch is di
   assert.deepEqual(result.replacements, [])
   assert.equal(result.htmlClasses.has('player-identity-disabled'), true)
   assert.match(html, /\.player-identity-disabled \.identity-first-paint \{\s+display: none;/)
-  assert.match(appSource, /const identityReady = shallowRef\(!playerIdentityEnabled\)/)
+  assert.match(
+    appSource,
+    /const identityReady = shallowRef\(!playerIdentityEnabled && !playerSessionEnabled\)/,
+  )
+})
+
+test('does not intercept identity callbacks while Cookie Session is enabled', () => {
+  const fragment = `handoff_grant=${VALID_GRANT}&handoff_action=exchange&state=${VALID_STATE}`
+  const result = runCallbackBootstrap({
+    identityEnabled: true,
+    sessionEnabled: true,
+    hash: `#${fragment}`,
+  })
+
+  assert.equal(result.window.__PWA_PLAYER_IDENTITY_CALLBACK_ACTIVE__, undefined)
+  assert.deepEqual(result.replacements, [])
+  assert.equal(result.htmlClasses.has('player-identity-disabled'), true)
 })

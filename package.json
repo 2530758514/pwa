@@ -8,6 +8,7 @@
     "dev:android": "vite --host 0.0.0.0 --port 4010 --mode android",
     "build": "vite build",
     "build:test": "vite build --mode test",
+    "test:session": "node --test tests/playerSessionFlow.test.mjs",
     "test:identity": "node --test tests/playerIdentityFlow.test.mjs tests/playerIdentityCallbackBootstrap.test.mjs tests/playerIdentityStartupOrder.test.mjs tests/pwaInstallHandoff.test.mjs tests/pwaFacebookAttributionHandoff.test.mjs tests/originHeader.test.mjs tests/pwaInfoCache.test.mjs tests/pwaStartupPolicy.test.mjs tests/bootstrapLoading.test.mjs tests/apiErrorToast.test.mjs",
     "preview": "vite preview",
     "preview:android": "vite preview --host 0.0.0.0 --port 4010"

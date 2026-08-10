@@ -17,3 +17,15 @@ export function appendFrontendOriginHeader(headers = {}) {
 
   return headers
 }
+
+export function shouldPreserveFrontendOriginHeader(config = {}) {
+  if (String(config.method || '').toLowerCase() !== 'get') return false
+
+  try {
+    const proxyOrigin = 'https://pwa.invalid'
+    const url = new URL(String(config.url || ''), proxyOrigin)
+    return url.origin === proxyOrigin && url.pathname === '/pwa_h5_detail'
+  } catch {
+    return false
+  }
+}

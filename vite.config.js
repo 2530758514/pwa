@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import postcssPxToViewport from 'postcss-px-to-viewport-8-plugin'
 import { fileURLToPath, URL } from 'node:url'
+import { rewriteApiProxyPath } from './src/shared/api/proxyPath.js'
 
 const APP_DESIGN_WIDTH = 375
 const APP_MAX_WIDTH = 430
@@ -82,7 +83,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite:
             stripProxyPrefix || proxyRewritePrefix
-              ? (requestPath) => requestPath.replace(new RegExp(`^${proxyPrefix}`), proxyRewritePrefix)
+              ? (requestPath) =>
+                  rewriteApiProxyPath(requestPath, {
+                    proxyPrefix,
+                    rewritePrefix: proxyRewritePrefix,
+                    stripPrefix: stripProxyPrefix,
+                  })
               : undefined,
         },
       },

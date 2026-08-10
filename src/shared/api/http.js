@@ -1,15 +1,16 @@
 ﻿import axios from 'axios'
 import { API_BASE_URL } from '@/shared/config/env'
-import { appendFrontendOriginHeader } from '@/shared/api/originHeader'
 import { appendOsHeader } from '@/shared/api/osHeader'
 import { appendBigoAttributionHeaders } from '@/shared/analytics/bigoAttribution'
 import { appendFacebookAttributionHeaders } from '@/shared/analytics/facebookAttribution'
 import { appendUrlAttributionHeaders } from '@/shared/analytics/urlAttributionHeaders'
+import { shouldPreserveFrontendOriginHeader } from '@/shared/api/originHeader'
 import { showDebugApiErrorToast } from '@/shared/debug/apiErrorToast'
 
 export const http = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -18,6 +19,18 @@ export const http = axios.create({
 export const PWA_ID_HEADER_NAME = 'X-Pwa-Id'
 
 const SUCCESS_CODES = new Set([1, 200, 201, 204])
+const UNTRUSTED_PROXY_HEADER_NAMES = [
+  'Cookie',
+  'Set-Cookie',
+  'Origin',
+  'X-Player-Public-Host',
+  'X-Origin',
+  'X-Forwarded-Host',
+  'Forwarded',
+  'agent_id',
+  'merchant_id',
+  'cookie_scope',
+]
 
 export function setPwaIdRequestHeader(value) {
   const pwaId = value === null || value === undefined ? '' : String(value).trim()
@@ -63,11 +76,35 @@ function rejectWithDebugToast(error) {
   return Promise.reject(error)
 }
 
+function removeHeader(headers, name) {
+  if (!headers) return
+
+  if (typeof headers.delete === 'function') {
+    headers.delete(name)
+    return
+  }
+
+  const normalizedName = String(name).toLowerCase()
+  Object.keys(headers).forEach((key) => {
+    if (key.toLowerCase() === normalizedName) delete headers[key]
+  })
+}
+
+function stripUntrustedProxyHeaders(headers, config) {
+  const preserveFrontendOrigin = shouldPreserveFrontendOriginHeader(config)
+
+  UNTRUSTED_PROXY_HEADER_NAMES.forEach((name) => {
+    if (preserveFrontendOrigin && name === 'X-Origin') return
+    removeHeader(headers, name)
+  })
+}
+
 http.interceptors.request.use((config) => {
-  config.headers = appendOsHeader(appendFrontendOriginHeader(config.headers || {}))
+  config.headers = appendOsHeader(config.headers || {})
   appendFacebookAttributionHeaders(config.headers)
   appendUrlAttributionHeaders(config.headers)
   appendBigoAttributionHeaders(config.headers)
+  stripUntrustedProxyHeaders(config.headers, config)
 
   return config
 })

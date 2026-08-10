@@ -160,6 +160,13 @@ test('identity-enabled shell never reveals an unauthenticated iframe on a timer'
   assert.match(fallbackSource, /revealIframe\(\)/)
 })
 
+test('Cookie Session shell starts the iframe reveal fallback before load fires', () => {
+  assert.match(
+    shellSource,
+    /watch\(\s*iframeSrc,[\s\S]*if \(sourceUrl\) scheduleIframeReadyFallback\(\)[\s\S]*\{ immediate: true \}/,
+  )
+})
+
 test('Android shows a persistent Open popup and falls back to H5 only while landing stays visible', () => {
   const openHandlerStart = installPageSource.indexOf('function handleInstalledOpen()')
   const openHandlerEnd = installPageSource.indexOf(

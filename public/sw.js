@@ -1,5 +1,5 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v8'
+const SW_VERSION = 'pwa-shell-runtime-v9'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
 const NOTIFICATION_NAVIGATION_CACHE_NAME = 'pwa-shell-notification-navigation-v1'
@@ -374,6 +374,12 @@ self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url)
 
   if (requestUrl.origin !== self.location.origin) {
+    return
+  }
+
+  // Authentication and business API responses must always go to the network.
+  // In particular, never cache Set-Cookie or replay bootstrap/register/login.
+  if (requestUrl.pathname === '/api' || requestUrl.pathname.startsWith('/api/')) {
     return
   }
 
