@@ -152,18 +152,23 @@ test('development proxy preserves new Session routes and strips legacy API route
   assert.equal(rewriteApiProxyPath('/api/web_user_info_list', options), '/web_user_info_list')
 })
 
-test('production delegates Cookie bootstrap and guest registration to the play08 iframe', async () => {
-  const [productionEnv, appSource, mainSource, shellSource, indexSource] =
+test('production defaults to Token mode and delegates authentication to the play08 iframe', async () => {
+  const [productionEnv, sessionConfig, appSource, mainSource, shellSource, indexSource] =
     await Promise.all([
       readFile(new URL('../.env.production', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/config/playerSession.js', import.meta.url), 'utf8'),
       readFile(new URL('../src/App.vue', import.meta.url), 'utf8'),
       readFile(new URL('../src/main.js', import.meta.url), 'utf8'),
       readFile(new URL('../src/components/pwa/PwaIframeShell.vue', import.meta.url), 'utf8'),
       readFile(new URL('../index.html', import.meta.url), 'utf8'),
     ])
 
-  assert.match(productionEnv, /VITE_PLAYER_SESSION_ENABLED=true/)
+  assert.match(productionEnv, /VITE_PLAYER_SESSION_ENABLED=false/)
   assert.match(productionEnv, /VITE_PLAYER_IDENTITY_ENABLED=false/)
+  assert.match(
+    sessionConfig,
+    /enabled:\s*normalizeBoolean\(import\.meta\.env\.VITE_PLAYER_SESSION_ENABLED\)/,
+  )
   assert.match(productionEnv, /VITE_H5_APP_URL=https:\/\/play08\.draft7bk\.uk/)
   assert.match(productionEnv, /VITE_PLAYER_SESSION_INSTALLED_PWA_MIGRATION_REQUIRED=false/)
   assert.match(productionEnv, /VITE_PLAYER_SESSION_GUEST_REGISTRATION_ENABLED=false/)
