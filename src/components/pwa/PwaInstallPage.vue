@@ -55,9 +55,9 @@ const INSTALL_PROGRESS_STEP_MS =
 const INSTALLED_OPEN_POPUP_DELAY_MS = 12000
 const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
-const OPEN_H5_FALLBACK_DELAY_MS = 5000
+const OPEN_H5_FALLBACK_DELAY_MS = 4000
 const OPEN_APP_BACKGROUND_CONFIRM_MS = 1500
-const OPEN_APP_RETRY_WINDOW_MS = 5000
+const OPEN_APP_RETRY_WINDOW_MS = 4000
 const OPEN_APP_RETRY_INTERVAL_MS = 1000
 const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
   Math.floor(OPEN_APP_RETRY_WINDOW_MS / OPEN_APP_RETRY_INTERVAL_MS) - 1,
@@ -445,7 +445,7 @@ function runPendingOpenH5Fallback() {
 }
 
 function scheduleOpenH5Fallback() {
-  return getOpenH5RedirectController()?.schedule() === true
+  return getOpenH5RedirectController()?.schedule({ preserveExisting: true }) === true
 }
 
 function restorePendingOpenH5Fallback(options = {}) {
@@ -1037,7 +1037,7 @@ function handlePopupDownload(controller) {
 onMounted(() => {
   document.addEventListener('visibilitychange', handlePostInstallPageVisible)
   window.addEventListener('pageshow', handlePostInstallPageVisible)
-  restorePendingOpenH5Fallback({ immediate: true })
+  restorePendingOpenH5Fallback()
   restorePendingInstalledOpenPopup()
 
   if (isAndroidPwaInstallDevice.value) {

@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { createDelayedRedirect } from '../src/shared/pwa/delayedRedirect.js'
-import { isPwaShellLaunchUrl } from '../src/shared/pwa/displayMode.js'
+import {
+  isPwaShellLaunchUrl,
+  resolveIsPwaShellRuntime,
+} from '../src/shared/pwa/displayMode.js'
 
 const serviceSource = readFileSync(
   new URL('../src/services/playerIdentity.js', import.meta.url),
@@ -168,8 +171,12 @@ test('Cookie Session shell starts the iframe reveal fallback before load fires',
   )
 })
 
-test('installed launch intent selects the H5 shell instead of the landing skeleton', () => {
-  assert.equal(isPwaShellLaunchUrl('https://pwa02.draft7bk.uk/?pwa_launch=1'), true)
+test('standalone PWA and home-screen shortcuts select the H5 shell', () => {
+  const homeScreenUrl = 'https://pwa02.draft7bk.uk/?pwa_launch=1'
+  const failedOpenAttemptUrl =
+    'https://pwa02.draft7bk.uk/?pwa_launch=1&pwa_launch_time=1786400000000'
+
+  assert.equal(isPwaShellLaunchUrl(homeScreenUrl), true)
   assert.equal(
     isPwaShellLaunchUrl(
       'https://pwa02.draft7bk.uk/#protocol_url=web%2Bhslot%3Aopen%3Fpwa_launch%3D1',
@@ -177,6 +184,18 @@ test('installed launch intent selects the H5 shell instead of the landing skelet
     true,
   )
   assert.equal(isPwaShellLaunchUrl('https://pwa02.draft7bk.uk/'), false)
+  assert.equal(
+    resolveIsPwaShellRuntime({ href: homeScreenUrl, isStandalone: false }),
+    true,
+  )
+  assert.equal(
+    resolveIsPwaShellRuntime({ href: failedOpenAttemptUrl, isStandalone: false }),
+    false,
+  )
+  assert.equal(
+    resolveIsPwaShellRuntime({ href: failedOpenAttemptUrl, isStandalone: true }),
+    true,
+  )
   assert.match(appSource, /<PwaIframeShell\s+v-if="isShellRuntime"/)
   assert.doesNotMatch(appSource, /canMountIframe|startPlayerSession/)
   assert.doesNotMatch(appSource, /<PwaPageSkeleton v-else-if="isShellRuntime/)
@@ -197,17 +216,16 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
   const launchHandlerSource = installPageSource.slice(launchHandlerStart, launchHandlerEnd)
 
   assert.match(installPageSource, /const INSTALLED_OPEN_POPUP_DELAY_MS = 12000/)
-  assert.match(installPageSource, /const OPEN_H5_FALLBACK_DELAY_MS = 5000/)
+  assert.match(installPageSource, /const OPEN_H5_FALLBACK_DELAY_MS = 4000/)
   assert.match(installPageSource, /const OPEN_APP_BACKGROUND_CONFIRM_MS = 1500/)
+  assert.match(installPageSource, /const OPEN_APP_RETRY_WINDOW_MS = 4000/)
   assert.match(installPageSource, /const OPEN_APP_RETRY_INTERVAL_MS = 1000/)
   assert.doesNotMatch(installPageSource, /scheduleAndroidPostInstallAutoOpenRetries/)
   assert.doesNotMatch(installPageSource, /schedulePostInstallH5Fallback/)
   assert.doesNotMatch(installPageSource, /usePwaLaunchReturnFallback/)
   assert.match(openHandlerSource, /tryOpenInstalledPwaFromLanding\(\)/)
-  assert.match(
-    openHandlerSource,
-    /scheduleOpenH5Fallback\(\)[\s\S]*tryOpenInstalledPwaFromLanding\(\)/,
-  )
+  assert.match(openHandlerSource, /scheduleOpenH5Fallback\(\)[\s\S]*tryOpenInstalledPwaFromLanding\(\)/)
+  assert.match(installPageSource, /schedule\(\{ preserveExisting: true \}\)/)
   assert.doesNotMatch(openHandlerSource, /showInstalledOpenPopup\.value = false/)
   assert.doesNotMatch(openHandlerSource, /clearPendingInstalledOpenPopup\(\)/)
   assert.match(installPageSource, /window\.location\.replace\(targetUrl\)/)
@@ -221,7 +239,7 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
     installPageSource,
     /function confirmOpenAppBackgroundLaunch\(\) \{[\s\S]*openH5RedirectController\?\.dispose\(\)[\s\S]*document\.visibilityState === 'hidden'[\s\S]*clearPendingOpenH5Fallback\(\)/,
   )
-  assert.match(installPageSource, /restorePendingOpenH5Fallback\(\{ immediate: true \}\)/)
+  assert.doesNotMatch(installPageSource, /restorePendingOpenH5Fallback\(\{ immediate: true \}\)/)
   assert.match(launchHandlerSource, /fallback: false/)
   assert.match(launchHandlerSource, /intentBrowserFallback: false/)
   assert.doesNotMatch(launchHandlerSource, /fallbackUrl|fallbackDelay|fallbackTopLevel/)
@@ -245,6 +263,8 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
   )
   assert.doesNotMatch(installedOpenPopupSource, /Open Web Page|installedOpen\.web|emit\('web'\)/)
   assert.match(installedOpenPopupSource, /visible\.value = false\s+emit\('close'\)/)
+  assert.doesNotMatch(installedOpenPopupSource, /opening|PwaLoadingSpinner|:disabled=/)
+  assert.doesNotMatch(installPageSource, /:opening=/)
   assert.match(installPageSource, /@close="handleInstalledPopupClose"/)
   assert.match(
     launchSource,
@@ -260,7 +280,7 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
   assert.doesNotMatch(launchSource, /launchLeftPage = false/)
 })
 
-test('Open H5 fallback resets on repeated clicks and redirects when the wake attempt stays visible', () => {
+test('Open H5 fallback keeps the first-click deadline when Open is tapped repeatedly', () => {
   const storageKey = 'pwa:open-h5-fallback-pending-v2'
   const storage = createMemoryStorage()
   const timers = new Map()
@@ -271,7 +291,7 @@ test('Open H5 fallback resets on repeated clicks and redirects when the wake att
 
   const createController = () =>
     createDelayedRedirect({
-      delayMs: 5000,
+      delayMs: 4000,
       storageKey,
       storage,
       resolveTargetUrl: () => 'https://h5.example.com/?fbclid=click-1',
@@ -286,33 +306,33 @@ test('Open H5 fallback resets on repeated clicks and redirects when the wake att
     })
 
   const firstController = createController()
-  assert.equal(firstController.schedule(), true)
-  assert.equal(timers.get(1).timeout, 5000)
+  assert.equal(firstController.schedule({ preserveExisting: true }), true)
+  assert.equal(timers.get(1).timeout, 4000)
 
   currentTime = 1500
-  assert.equal(firstController.schedule(), true)
-  assert.deepEqual(clearedTimers, [1])
-  assert.equal(JSON.parse(storage.getItem(storageKey)).dueAt, 6500)
+  assert.equal(firstController.schedule({ preserveExisting: true }), true)
+  assert.deepEqual(clearedTimers, [])
+  assert.equal(JSON.parse(storage.getItem(storageKey)).dueAt, 5000)
   assert.equal(
     JSON.parse(storage.getItem(storageKey)).targetUrl,
     'https://h5.example.com/?fbclid=click-1',
   )
 
-  currentTime = 6500
-  timers.get(2).callback()
+  currentTime = 5000
+  timers.get(1).callback()
 
   assert.deepEqual(navigations, ['https://h5.example.com/?fbclid=click-1'])
   assert.equal(storage.getItem(storageKey), null)
 })
 
-test('Open H5 fallback survives a failed Intent reload without needing PWA detail again', () => {
+test('Open H5 fallback preserves the remaining launch window after an Intent reload', () => {
   const storageKey = 'pwa:open-h5-fallback-pending-v2'
   const storage = createMemoryStorage()
   const navigations = []
   let currentTime = 1000
 
   const firstController = createDelayedRedirect({
-    delayMs: 5000,
+    delayMs: 4000,
     storageKey,
     storage,
     resolveTargetUrl: () => 'https://h5.example.com/?fbclid=click-1',
@@ -325,18 +345,30 @@ test('Open H5 fallback survives a failed Intent reload without needing PWA detai
   firstController.dispose()
 
   currentTime = 1200
+  let restoredCallback = null
+  let restoredTimeout = null
   const restoredController = createDelayedRedirect({
-    delayMs: 5000,
+    delayMs: 4000,
     storageKey,
     storage,
     resolveTargetUrl: () => '',
     navigate: (targetUrl) => navigations.push(targetUrl),
     now: () => currentTime,
-    setTimer: () => 2,
+    setTimer: (callback, timeout) => {
+      restoredCallback = callback
+      restoredTimeout = timeout
+      return 2
+    },
     clearTimer: () => {},
   })
 
-  assert.equal(restoredController.restore({ immediate: true }), true)
+  assert.equal(restoredController.restore(), true)
+  assert.equal(restoredTimeout, 3800)
+  assert.deepEqual(navigations, [])
+
+  currentTime = 5000
+  restoredCallback()
+
   assert.deepEqual(navigations, ['https://h5.example.com/?fbclid=click-1'])
   assert.equal(storage.getItem(storageKey), null)
 })

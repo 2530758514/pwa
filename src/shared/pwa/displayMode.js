@@ -4,6 +4,7 @@
 
 const PWA_SHELL_LAUNCH_PARAM = 'pwa_launch'
 const PWA_SHELL_LAUNCH_VALUE = '1'
+const PWA_SHELL_LAUNCH_TIME_PARAM = 'pwa_launch_time'
 
 function hasPwaLaunchParam(url) {
   return url.searchParams.get(PWA_SHELL_LAUNCH_PARAM) === PWA_SHELL_LAUNCH_VALUE
@@ -19,6 +20,23 @@ export function isPwaShellLaunchUrl(value) {
 
     const protocolUrl = hashParams.get('protocol_url')
     return protocolUrl ? hasPwaLaunchParam(new URL(protocolUrl)) : false
+  } catch {
+    return false
+  }
+}
+
+function isPwaOpenAttemptUrl(value) {
+  try {
+    const url = new URL(String(value || ''), 'https://pwa-shell.invalid')
+    if (url.searchParams.has(PWA_SHELL_LAUNCH_TIME_PARAM)) return true
+
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''))
+    if (hashParams.has(PWA_SHELL_LAUNCH_TIME_PARAM)) return true
+
+    const protocolUrl = hashParams.get('protocol_url')
+    return protocolUrl
+      ? new URL(protocolUrl).searchParams.has(PWA_SHELL_LAUNCH_TIME_PARAM)
+      : false
   } catch {
     return false
   }
@@ -46,10 +64,21 @@ export function resolveIsPwaStandalone() {
   )
 }
 
-export function resolveIsPwaShellRuntime() {
-  if (!isBrowserRuntime()) return false
+export function resolveIsPwaShellRuntime(options = {}) {
+  const isStandalone =
+    typeof options.isStandalone === 'boolean'
+      ? options.isStandalone
+      : resolveIsPwaStandalone()
+  if (isStandalone) return true
 
-  return resolveIsPwaStandalone() || isPwaShellLaunchUrl(window.location.href)
+  const href =
+    typeof options.href === 'string'
+      ? options.href
+      : isBrowserRuntime()
+        ? window.location.href
+        : ''
+
+  return isPwaShellLaunchUrl(href) && !isPwaOpenAttemptUrl(href)
 }
 
 function syncPwaDisplayModeClasses() {

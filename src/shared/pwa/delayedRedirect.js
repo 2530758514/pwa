@@ -90,6 +90,8 @@ export function createDelayedRedirect(options = {}) {
   }
 
   function schedule(scheduleOptions = {}) {
+    if (scheduleOptions.preserveExisting === true && dueAt) return true
+
     const resolvedTargetUrl = String(
       scheduleOptions.targetUrl || resolveTargetUrl?.() || '',
     ).trim()
