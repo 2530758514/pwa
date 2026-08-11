@@ -58,7 +58,7 @@ const DEFAULT_INSTALL_ICONS = [
 ]
 const PWA_APP_ID_PATH = '/'
 const PWA_APP_SCOPE_PATH = '/'
-const PWA_APP_START_PATH = '/'
+const PWA_APP_START_PATH = '/?pwa_launch=1'
 export const PWA_PROTOCOL = 'web+hslot'
 export const PWA_PROTOCOL_HANDLER_URL = '/#protocol_url=%s'
 const PWA_APP_ID_URL = String(import.meta.env.VITE_PWA_APP_ID || '').trim()

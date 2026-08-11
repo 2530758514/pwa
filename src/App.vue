@@ -5,12 +5,11 @@ import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
 import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
-import { usePlayerSessionStartup } from '@/composables/pwa/usePlayerSessionStartup'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
 import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
 import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
-import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
+import { resolveIsPwaShellRuntime } from '@/shared/pwa/displayMode'
 import {
   isAndroidInstallIdentityHandoffRuntime,
   resolvePwaH5IdentityOrigin,
@@ -26,27 +25,21 @@ import { initializePwaNotificationClickTracking } from '@/services/pwaNotificati
 const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo({
   autoLoad: false,
 })
-const isStandalone = shallowRef(resolveIsPwaStandalone())
+const isShellRuntime = shallowRef(resolveIsPwaShellRuntime())
 const playerSessionEnabled = isPlayerSessionEnabled()
 const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()
-const identityReady = shallowRef(!playerIdentityEnabled && !playerSessionEnabled)
-const {
-  status: playerSessionStatus,
-  canMountIframe,
-  start: startPlayerSession,
-  confirmIframeLogin,
-} = usePlayerSessionStartup()
+const identityReady = shallowRef(!playerIdentityEnabled)
 let displayModeQuery = null
 let refreshPwaInfoAfterStandaloneReady = false
 
 function applyReadyThemeColor() {
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', isStandalone.value ? '#272d39' : '#ffffff')
+    ?.setAttribute('content', isShellRuntime.value ? '#272d39' : '#ffffff')
 }
 
 function syncStandaloneMode() {
-  isStandalone.value = resolveIsPwaStandalone()
+  isShellRuntime.value = resolveIsPwaShellRuntime()
   if (identityReady.value) applyReadyThemeColor()
 }
 
@@ -56,7 +49,7 @@ async function showReadySurface() {
   identityReady.value = true
   await nextTick()
 
-  if (!isStandalone.value) dismissBootstrapLoading()
+  if (!isShellRuntime.value) dismissBootstrapLoading()
 }
 
 function handleStandaloneAppReady() {
@@ -66,10 +59,6 @@ function handleStandaloneAppReady() {
 
   refreshPwaInfoAfterStandaloneReady = false
   void loadPwaInfo({ background: true })
-}
-
-function handlePlayerSessionRefresh() {
-  void confirmIframeLogin().catch(() => {})
 }
 
 onMounted(async () => {
@@ -88,32 +77,28 @@ onMounted(async () => {
 
   capturePwaLandingAttribution()
 
-  if (playerSessionEnabled && isStandalone.value) {
-    await startPlayerSession({ pwaInfo: pwaInfo.value }).catch(() => {})
-  }
-
   try {
     const requiresInstallHandoff =
       playerIdentityEnabled &&
-      !isStandalone.value &&
+      !isShellRuntime.value &&
       isAndroidInstallIdentityHandoffRuntime()
     const hasReturnedInstallHandoff = identityResult?.type === 'install_pending'
     const canRenderReadySurfaceImmediately = shouldRenderPwaSurfaceImmediately({
       hasCachedPwaInfo: hasPwaInfo.value,
       hasReturnedInstallHandoff,
       hasStandaloneFallback: Boolean(String(H5_APP_URL || '').trim()),
-      isStandalone: isStandalone.value,
+      isStandalone: isShellRuntime.value,
       requiresInstallHandoff,
     })
 
     if (canRenderReadySurfaceImmediately) {
-      if (isStandalone.value) {
+      if (isShellRuntime.value) {
         refreshPwaInfoAfterStandaloneReady = true
       }
 
       await showReadySurface()
 
-      if (!isStandalone.value) {
+      if (!isShellRuntime.value) {
         void loadPwaInfo({ background: true })
       }
       return
@@ -149,14 +134,12 @@ onUnmounted(() => {
 <template>
   <template v-if="identityReady">
     <PwaIframeShell
-      v-if="isStandalone && (!playerSessionEnabled || canMountIframe)"
+      v-if="isShellRuntime"
       :pwa-info="pwaInfo"
       :loading="loading"
-      :player-session-status="playerSessionStatus"
       @app-ready="handleStandaloneAppReady"
-      @player-session-refresh="handlePlayerSessionRefresh"
     />
-    <PwaPageSkeleton v-else-if="isStandalone || !hasPwaInfo" />
+    <PwaPageSkeleton v-else-if="!hasPwaInfo" />
     <PwaInstallPage
       v-else
       :pwa-info="pwaInfo"
@@ -164,5 +147,5 @@ onUnmounted(() => {
       :load-pwa-info="loadPwaInfo"
     />
   </template>
-  <PwaFacebookBrowserGate v-if="identityReady && !isStandalone" />
+  <PwaFacebookBrowserGate v-if="identityReady && !isShellRuntime" />
 </template>

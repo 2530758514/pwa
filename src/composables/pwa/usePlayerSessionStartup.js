@@ -1,6 +1,10 @@
 import { computed, readonly, shallowRef } from 'vue'
 import { playerSessionService } from '@/services/playerSession'
-import { PLAYER_SESSION_RESULT, PLAYER_SESSION_STATUS } from '@/shared/auth/playerSessionFlow'
+import {
+  PLAYER_SESSION_RESULT,
+  PLAYER_SESSION_STATUS,
+  canMountPlayerSessionIframe,
+} from '@/shared/auth/playerSessionFlow'
 import {
   canCreateGuestAfterMigration,
   readInstalledPwaMigrationState,
@@ -146,13 +150,7 @@ export function usePlayerSessionStartup() {
   const isAuthenticated = computed(
     () => status.value === PLAYER_SESSION_STATUS.AUTHENTICATED && userId.value != null,
   )
-  const canMountIframe = computed(() =>
-    [
-      PLAYER_SESSION_STATUS.AUTHENTICATED,
-      PLAYER_SESSION_STATUS.MIGRATION_REQUIRED,
-      PLAYER_SESSION_STATUS.RECOVERY_REQUIRED,
-    ].includes(status.value),
-  )
+  const canMountIframe = computed(() => canMountPlayerSessionIframe(status.value))
   function start(options = {}) {
     if (!startupPromise) {
       startupPromise = startInternal(options).finally(() => {

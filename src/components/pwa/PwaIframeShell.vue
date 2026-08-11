@@ -19,11 +19,7 @@ import {
   postPlayerIdentityParentReady,
   resetPlayerIdentityIframeBridge,
 } from '@/services/playerIdentityIframeBridge'
-import {
-  handlePlayerSessionIframeMessage,
-  resetPlayerSessionIframeBridge,
-} from '@/services/playerSessionIframeBridge'
-import { PLAYER_SESSION_CONFIG, isPlayerSessionEnabled } from '@/shared/config/playerSession'
+import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { isPwaH5AppReadyMessage } from '@/shared/pwa/iframeLifecycleMessages'
 import {
@@ -51,7 +47,7 @@ defineOptions({
   name: 'PwaIframeShell',
 })
 
-const emit = defineEmits(['app-ready', 'player-session-refresh'])
+const emit = defineEmits(['app-ready'])
 
 const props = defineProps({
   pwaInfo: {
@@ -61,10 +57,6 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false,
-  },
-  playerSessionStatus: {
-    type: String,
-    default: '',
   },
 })
 
@@ -459,20 +451,6 @@ function handleIframeMessage(event) {
   }
 
   if (
-    playerSessionEnabled &&
-    handlePlayerSessionIframeMessage({
-      event,
-      iframeWindow,
-      iframeOrigin: iframeOrigin.value,
-      allowedOrigins: PLAYER_SESSION_CONFIG.iframeOrigins,
-      sessionStatus: props.playerSessionStatus,
-      onSessionReady: () => emit('player-session-refresh'),
-    })
-  ) {
-    return
-  }
-
-  if (
     handlePlayerIdentityIframeMessage({
       event,
       iframeWindow,
@@ -544,7 +522,6 @@ onUnmounted(() => {
   navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage)
   window.removeEventListener('message', handleIframeMessage)
   resetPlayerIdentityIframeBridge()
-  resetPlayerSessionIframeBridge()
   clearPlayerIdentityParentReadyRetries()
   clearIframeReadyFallback()
   clearNotificationPermissionTimer()

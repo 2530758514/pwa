@@ -2,6 +2,28 @@
   return typeof window !== 'undefined' && typeof navigator !== 'undefined'
 }
 
+const PWA_SHELL_LAUNCH_PARAM = 'pwa_launch'
+const PWA_SHELL_LAUNCH_VALUE = '1'
+
+function hasPwaLaunchParam(url) {
+  return url.searchParams.get(PWA_SHELL_LAUNCH_PARAM) === PWA_SHELL_LAUNCH_VALUE
+}
+
+export function isPwaShellLaunchUrl(value) {
+  try {
+    const url = new URL(String(value || ''), 'https://pwa-shell.invalid')
+    if (hasPwaLaunchParam(url)) return true
+
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''))
+    if (hashParams.get(PWA_SHELL_LAUNCH_PARAM) === PWA_SHELL_LAUNCH_VALUE) return true
+
+    const protocolUrl = hashParams.get('protocol_url')
+    return protocolUrl ? hasPwaLaunchParam(new URL(protocolUrl)) : false
+  } catch {
+    return false
+  }
+}
+
 function resolveIsAppleDevice() {
   if (!isBrowserRuntime()) return false
 
@@ -22,6 +44,12 @@ export function resolveIsPwaStandalone() {
     window.matchMedia?.('(display-mode: fullscreen)').matches ||
     window.navigator?.standalone === true
   )
+}
+
+export function resolveIsPwaShellRuntime() {
+  if (!isBrowserRuntime()) return false
+
+  return resolveIsPwaStandalone() || isPwaShellLaunchUrl(window.location.href)
 }
 
 function syncPwaDisplayModeClasses() {

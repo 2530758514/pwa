@@ -1,5 +1,5 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v9'
+const SW_VERSION = 'pwa-shell-runtime-v10'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
 const NOTIFICATION_NAVIGATION_CACHE_NAME = 'pwa-shell-notification-navigation-v1'
@@ -28,7 +28,7 @@ const FALLBACK_MANIFEST = {
   short_name: 'SlotFront H5',
   description:
     'Welcome to our entertainment platform, designed to bring you a smooth, exciting, and enjoyable experience anytime, anywhere.',
-  start_url: '/',
+  start_url: '/?pwa_launch=1',
   scope: '/',
   display: 'standalone',
   orientation: 'portrait',

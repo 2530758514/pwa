@@ -22,6 +22,14 @@ export const PLAYER_SESSION_RESULT = Object.freeze({
   CONTRACT_ERROR: 'contract-error',
 })
 
+const IFRAME_MOUNTABLE_STATUSES = new Set([
+  PLAYER_SESSION_STATUS.MIGRATION_REQUIRED,
+  PLAYER_SESSION_STATUS.AUTHENTICATED,
+  PLAYER_SESSION_STATUS.RECOVERY_REQUIRED,
+  PLAYER_SESSION_STATUS.UNAVAILABLE,
+  PLAYER_SESSION_STATUS.CONTRACT_ERROR,
+])
+
 const BOOTSTRAP_RESPONSE_CODES = new Set([200, 401, 402, 403, 405, 423, 503])
 
 function normalizeCode(value) {
@@ -57,6 +65,10 @@ export function classifyPlayerSessionBootstrapResponse(response = {}) {
   if (status === 503) return PLAYER_SESSION_RESULT.UNAVAILABLE
 
   return PLAYER_SESSION_RESULT.CONTRACT_ERROR
+}
+
+export function canMountPlayerSessionIframe(status) {
+  return IFRAME_MOUNTABLE_STATUSES.has(status)
 }
 
 export async function runPlayerSessionBootstrap({ request, legacyToken = '' } = {}) {

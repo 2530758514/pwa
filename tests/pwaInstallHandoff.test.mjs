@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { createDelayedRedirect } from '../src/shared/pwa/delayedRedirect.js'
+import { isPwaShellLaunchUrl } from '../src/shared/pwa/displayMode.js'
 
 const serviceSource = readFileSync(
   new URL('../src/services/playerIdentity.js', import.meta.url),
@@ -165,6 +166,20 @@ test('Cookie Session shell starts the iframe reveal fallback before load fires',
     shellSource,
     /watch\(\s*iframeSrc,[\s\S]*if \(sourceUrl\) scheduleIframeReadyFallback\(\)[\s\S]*\{ immediate: true \}/,
   )
+})
+
+test('installed launch intent selects the H5 shell instead of the landing skeleton', () => {
+  assert.equal(isPwaShellLaunchUrl('https://pwa02.draft7bk.uk/?pwa_launch=1'), true)
+  assert.equal(
+    isPwaShellLaunchUrl(
+      'https://pwa02.draft7bk.uk/#protocol_url=web%2Bhslot%3Aopen%3Fpwa_launch%3D1',
+    ),
+    true,
+  )
+  assert.equal(isPwaShellLaunchUrl('https://pwa02.draft7bk.uk/'), false)
+  assert.match(appSource, /<PwaIframeShell\s+v-if="isShellRuntime"/)
+  assert.doesNotMatch(appSource, /canMountIframe|startPlayerSession/)
+  assert.doesNotMatch(appSource, /<PwaPageSkeleton v-else-if="isShellRuntime/)
 })
 
 test('Android shows a persistent Open popup and falls back to H5 only while landing stays visible', () => {

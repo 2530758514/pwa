@@ -90,7 +90,7 @@ test('does not intercept handoff callbacks when the global identity switch is di
   assert.match(html, /\.player-identity-disabled \.identity-first-paint \{\s+display: none;/)
   assert.match(
     appSource,
-    /const identityReady = shallowRef\(!playerIdentityEnabled && !playerSessionEnabled\)/,
+    /const identityReady = shallowRef\(!playerIdentityEnabled\)/,
   )
 })
 

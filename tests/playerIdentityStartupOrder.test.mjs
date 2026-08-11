@@ -67,7 +67,7 @@ test('defers cached standalone detail refresh until the H5 iframe is ready', () 
 
   assert.match(
     bootstrap,
-    /if \(isStandalone\.value\) \{\s+refreshPwaInfoAfterStandaloneReady = true\s+\}[\s\S]*await showReadySurface\(\)[\s\S]*if \(!isStandalone\.value\) \{\s+void loadPwaInfo\(\{ background: true \}\)/,
+    /if \(isShellRuntime\.value\) \{\s+refreshPwaInfoAfterStandaloneReady = true\s+\}[\s\S]*await showReadySurface\(\)[\s\S]*if \(!isShellRuntime\.value\) \{\s+void loadPwaInfo\(\{ background: true \}\)/,
   )
   assert.match(
     readyHandler,

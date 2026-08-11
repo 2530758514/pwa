@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   PLAYER_SESSION_RESULT,
+  PLAYER_SESSION_STATUS,
+  canMountPlayerSessionIframe,
   classifyPlayerSessionBootstrapResponse,
   runPlayerSessionBootstrap,
 } from '../src/shared/auth/playerSessionFlow.js'
@@ -64,6 +66,24 @@ test('two consecutive bootstrap 401 responses stop without registration', async 
 
   assert.equal(requestCount, 2)
   assert.equal(outcome.result, PLAYER_SESSION_RESULT.UNAUTHORIZED)
+})
+
+test('mounts H5 recovery after non-security Session startup failures', () => {
+  ;[
+    PLAYER_SESSION_STATUS.MIGRATION_REQUIRED,
+    PLAYER_SESSION_STATUS.AUTHENTICATED,
+    PLAYER_SESSION_STATUS.RECOVERY_REQUIRED,
+    PLAYER_SESSION_STATUS.UNAVAILABLE,
+    PLAYER_SESSION_STATUS.CONTRACT_ERROR,
+  ].forEach((status) => assert.equal(canMountPlayerSessionIframe(status), true, status))
+
+  ;[
+    PLAYER_SESSION_STATUS.IDLE,
+    PLAYER_SESSION_STATUS.BOOTSTRAPPING,
+    PLAYER_SESSION_STATUS.REGISTRATION_REQUIRED,
+    PLAYER_SESSION_STATUS.LOCKED,
+    PLAYER_SESSION_STATUS.FATAL_CONFIG,
+  ].forEach((status) => assert.equal(canMountPlayerSessionIframe(status), false, status))
 })
 
 test('402 is registration-required only for the exact bootstrap contract', () => {
@@ -132,11 +152,10 @@ test('development proxy preserves new Session routes and strips legacy API route
   assert.equal(rewriteApiProxyPath('/api/web_user_info_list', options), '/web_user_info_list')
 })
 
-test('production uses Cookie bootstrap without identity center or guest registration', async () => {
-  const [productionEnv, bridgeSource, appSource, mainSource, shellSource, indexSource] =
+test('production delegates Cookie bootstrap and guest registration to the play08 iframe', async () => {
+  const [productionEnv, appSource, mainSource, shellSource, indexSource] =
     await Promise.all([
       readFile(new URL('../.env.production', import.meta.url), 'utf8'),
-      readFile(new URL('../src/services/playerSessionIframeBridge.js', import.meta.url), 'utf8'),
       readFile(new URL('../src/App.vue', import.meta.url), 'utf8'),
       readFile(new URL('../src/main.js', import.meta.url), 'utf8'),
       readFile(new URL('../src/components/pwa/PwaIframeShell.vue', import.meta.url), 'utf8'),
@@ -149,13 +168,14 @@ test('production uses Cookie bootstrap without identity center or guest registra
   assert.match(productionEnv, /VITE_PLAYER_SESSION_INSTALLED_PWA_MIGRATION_REQUIRED=false/)
   assert.match(productionEnv, /VITE_PLAYER_SESSION_GUEST_REGISTRATION_ENABLED=false/)
   assert.match(appSource, /const playerIdentityEnabled = !playerSessionEnabled/)
+  assert.match(appSource, /const identityReady = shallowRef\(!playerIdentityEnabled\)/)
+  assert.match(appSource, /<PwaIframeShell\s+v-if="isShellRuntime"/)
+  assert.doesNotMatch(appSource, /usePlayerSessionStartup|startPlayerSession|canMountIframe/)
   assert.match(mainSource, /if \(!isPlayerSessionEnabled\(\) && isPlayerIdentityEnabled\(\)\)/)
   assert.match(shellSource, /const playerIdentityEnabled = !playerSessionEnabled/)
-  assert.match(indexSource, /!playerSessionEnabled &&[\s\S]*VITE_PLAYER_IDENTITY_ENABLED/)
-  assert.match(bridgeSource, /event\.source === iframeWindow/)
-  assert.match(bridgeSource, /event\.origin === normalizedOrigin/)
-  assert.doesNotMatch(bridgeSource, /postMessage\([^)]*,\s*['"]\*['"]/)
-  assert.ok(
-    appSource.indexOf('await startPlayerSession') < appSource.indexOf('await showReadySurface'),
+  assert.doesNotMatch(
+    shellSource,
+    /handlePlayerSessionIframeMessage|playerSessionStatus|player-session-refresh/,
   )
+  assert.match(indexSource, /!playerSessionEnabled &&[\s\S]*VITE_PLAYER_IDENTITY_ENABLED/)
 })
