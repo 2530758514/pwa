@@ -218,6 +218,7 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
   assert.match(installPageSource, /const INSTALLED_OPEN_POPUP_DELAY_MS = 12000/)
   assert.match(installPageSource, /const OPEN_H5_FALLBACK_DELAY_MS = 4000/)
   assert.match(installPageSource, /const OPEN_APP_BACKGROUND_CONFIRM_MS = 1500/)
+  assert.match(installPageSource, /const OPEN_RETURN_H5_FALLBACK_DELAY_MS = 10000/)
   assert.match(installPageSource, /const OPEN_APP_RETRY_WINDOW_MS = 4000/)
   assert.match(installPageSource, /const OPEN_APP_RETRY_INTERVAL_MS = 1000/)
   assert.doesNotMatch(installPageSource, /scheduleAndroidPostInstallAutoOpenRetries/)
@@ -230,6 +231,7 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
   assert.doesNotMatch(openHandlerSource, /clearPendingInstalledOpenPopup\(\)/)
   assert.match(installPageSource, /window\.location\.replace\(targetUrl\)/)
   assert.match(installPageSource, /const OPEN_H5_FALLBACK_SESSION_KEY =/)
+  assert.match(installPageSource, /const OPEN_RETURN_H5_FALLBACK_SESSION_KEY =/)
   assert.match(installPageSource, /function restorePendingOpenH5Fallback\(options = \{\}\)/)
   assert.match(
     installPageSource,
@@ -239,6 +241,23 @@ test('Android shows a persistent Open popup and falls back to H5 only while land
     installPageSource,
     /function confirmOpenAppBackgroundLaunch\(\) \{[\s\S]*openH5RedirectController\?\.dispose\(\)[\s\S]*document\.visibilityState === 'hidden'[\s\S]*clearPendingOpenH5Fallback\(\)/,
   )
+  assert.match(
+    installPageSource,
+    /const hiddenLongEnough =[\s\S]*Date\.now\(\) - openAppHiddenAt >= OPEN_APP_BACKGROUND_CONFIRM_MS/,
+  )
+  assert.match(
+    installPageSource,
+    /if \(shouldStartReturnFallback\) \{\s+clearPendingOpenH5Fallback\(\)\s+scheduleOpenReturnH5Fallback\(\)/,
+  )
+  assert.match(
+    installPageSource,
+    /function scheduleOpenH5Fallback\(\) \{\s+if \(openReturnH5FallbackPending\) return true/,
+  )
+  assert.match(
+    installPageSource,
+    /document\.visibilityState === 'hidden'\) \{\s+if \(!postInstallOpenRequested\.value \|\| openReturnH5FallbackPending\) return/,
+  )
+  assert.match(installPageSource, /restorePendingOpenReturnH5Fallback\(\)/)
   assert.doesNotMatch(installPageSource, /restorePendingOpenH5Fallback\(\{ immediate: true \}\)/)
   assert.match(launchHandlerSource, /fallback: false/)
   assert.match(launchHandlerSource, /intentBrowserFallback: false/)

@@ -57,6 +57,7 @@ const ANDROID_INSTALL_PROMPT_WAIT_MS = 32000
 const DEFAULT_INSTALL_PROMPT_WAIT_MS = 6000
 const OPEN_H5_FALLBACK_DELAY_MS = 4000
 const OPEN_APP_BACKGROUND_CONFIRM_MS = 1500
+const OPEN_RETURN_H5_FALLBACK_DELAY_MS = 10000
 const OPEN_APP_RETRY_WINDOW_MS = 4000
 const OPEN_APP_RETRY_INTERVAL_MS = 1000
 const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
@@ -65,6 +66,7 @@ const OPEN_APP_RETRY_MAX_ATTEMPTS = Math.max(
 )
 const INSTALLED_OPEN_POPUP_SESSION_KEY = 'pwa:installed-open-popup-pending'
 const OPEN_H5_FALLBACK_SESSION_KEY = 'pwa:open-h5-fallback-pending-v2'
+const OPEN_RETURN_H5_FALLBACK_SESSION_KEY = 'pwa:open-return-h5-fallback-pending-v1'
 const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
 const OPEN_BROWSER_USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
@@ -136,7 +138,11 @@ let toastTimer = null
 let openAppRetryTimer = null
 let openAppRetryAttemptCount = 0
 let openH5RedirectController = null
+let openReturnH5RedirectController = null
+let openReturnH5FallbackPending = false
 let openAppBackgroundConfirmTimer = null
+let openAppHiddenAt = 0
+let openAppBackgroundLaunchConfirmed = false
 
 const appInfo = computed(() => {
   const remote = props.pwaInfo || {}
@@ -403,6 +409,7 @@ function redirectToH5Page() {
 
   clearOpenAppAttempt()
   clearPendingOpenH5Fallback()
+  clearPendingOpenReturnH5Fallback()
   window.location.href = targetUrl
 
   return true
@@ -445,11 +452,78 @@ function runPendingOpenH5Fallback() {
 }
 
 function scheduleOpenH5Fallback() {
+  if (openReturnH5FallbackPending) return true
+
   return getOpenH5RedirectController()?.schedule({ preserveExisting: true }) === true
 }
 
 function restorePendingOpenH5Fallback(options = {}) {
-  return getOpenH5RedirectController()?.restore(options) === true
+  const restored = getOpenH5RedirectController()?.restore(options) === true
+  if (restored) postInstallOpenRequested.value = true
+
+  return restored
+}
+
+function getOpenReturnH5RedirectController() {
+  if (typeof window === 'undefined') return null
+  if (openReturnH5RedirectController) return openReturnH5RedirectController
+
+  let redirectStorage = null
+
+  try {
+    redirectStorage = window.sessionStorage
+  } catch {
+    // The in-memory timer remains available when session storage is blocked.
+  }
+
+  openReturnH5RedirectController = createDelayedRedirect({
+    delayMs: OPEN_RETURN_H5_FALLBACK_DELAY_MS,
+    storageKey: OPEN_RETURN_H5_FALLBACK_SESSION_KEY,
+    storage: redirectStorage,
+    resolveTargetUrl: resolveH5RedirectUrl,
+    navigate: (targetUrl) => {
+      openReturnH5FallbackPending = false
+      clearOpenAppAttempt()
+      clearPendingOpenH5Fallback()
+      window.location.replace(targetUrl)
+    },
+    setTimer: (callback, timeout) => window.setTimeout(callback, timeout),
+    clearTimer: (timerId) => window.clearTimeout(timerId),
+  })
+
+  return openReturnH5RedirectController
+}
+
+function clearPendingOpenReturnH5Fallback() {
+  openReturnH5FallbackPending = false
+  openReturnH5RedirectController?.clearPending()
+}
+
+function runPendingOpenReturnH5Fallback() {
+  const redirected = getOpenReturnH5RedirectController()?.runIfDue() === true
+  if (redirected) openReturnH5FallbackPending = false
+
+  return redirected
+}
+
+function scheduleOpenReturnH5Fallback() {
+  if (openReturnH5FallbackPending) return true
+
+  const scheduled =
+    getOpenReturnH5RedirectController()?.schedule({ preserveExisting: true }) === true
+  if (scheduled) openReturnH5FallbackPending = true
+
+  return scheduled
+}
+
+function restorePendingOpenReturnH5Fallback() {
+  const restored = getOpenReturnH5RedirectController()?.restore() === true
+  if (restored) {
+    openReturnH5FallbackPending = true
+    clearPendingOpenH5Fallback()
+  }
+
+  return restored
 }
 
 function clearOpenAppBackgroundConfirmation() {
@@ -462,10 +536,12 @@ function clearOpenAppBackgroundConfirmation() {
 function confirmOpenAppBackgroundLaunch() {
   clearOpenAppBackgroundConfirmation()
   openH5RedirectController?.dispose()
+  if (!openAppHiddenAt) openAppHiddenAt = Date.now()
   openAppBackgroundConfirmTimer = window.setTimeout(() => {
     openAppBackgroundConfirmTimer = null
 
     if (document.visibilityState === 'hidden') {
+      openAppBackgroundLaunchConfirmed = true
       clearPendingOpenH5Fallback()
     }
   }, OPEN_APP_BACKGROUND_CONFIRM_MS)
@@ -716,11 +792,29 @@ function handlePostInstallPageVisible() {
   if (typeof document === 'undefined') return
 
   if (document.visibilityState === 'hidden') {
+    if (!postInstallOpenRequested.value || openReturnH5FallbackPending) return
+
     confirmOpenAppBackgroundLaunch()
     return
   }
 
+  const hiddenLongEnough =
+    openAppHiddenAt > 0 && Date.now() - openAppHiddenAt >= OPEN_APP_BACKGROUND_CONFIRM_MS
+  const shouldStartReturnFallback =
+    openAppBackgroundLaunchConfirmed || hiddenLongEnough
+
   clearOpenAppBackgroundConfirmation()
+  openAppHiddenAt = 0
+  openAppBackgroundLaunchConfirmed = false
+
+  restorePendingOpenReturnH5Fallback()
+  if (runPendingOpenReturnH5Fallback()) return
+
+  if (shouldStartReturnFallback) {
+    clearPendingOpenH5Fallback()
+    scheduleOpenReturnH5Fallback()
+  }
+
   restorePendingOpenH5Fallback()
   if (runPendingOpenH5Fallback()) return
   if (!installedOpenPopupPending || postInstallActionStarted) return
@@ -1038,6 +1132,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', handlePostInstallPageVisible)
   window.addEventListener('pageshow', handlePostInstallPageVisible)
   restorePendingOpenH5Fallback()
+  restorePendingOpenReturnH5Fallback()
   restorePendingInstalledOpenPopup()
 
   if (isAndroidPwaInstallDevice.value) {
@@ -1063,6 +1158,8 @@ onBeforeUnmount(() => {
   clearOpenAppBackgroundConfirmation()
   openH5RedirectController?.dispose()
   openH5RedirectController = null
+  openReturnH5RedirectController?.dispose()
+  openReturnH5RedirectController = null
   clearOpenBrowserAutoOpenTimer()
   teardownOpenBrowserUserGestureRetry()
   teardownQrCode()
