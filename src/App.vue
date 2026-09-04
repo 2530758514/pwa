@@ -1,10 +1,12 @@
 ﻿<script setup>
-import { nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
 import PwaFacebookBrowserGate from '@/components/pwa/PwaFacebookBrowserGate.vue'
 import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
 import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
+import PwaTetrisLanding from '@/components/pwa/PwaTetrisLanding.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
+import { hasFacebookUrlAttribution } from '@/shared/analytics/facebookLandingParams'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
 import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
@@ -26,6 +28,9 @@ const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo
   autoLoad: false,
 })
 const isShellRuntime = shallowRef(resolveIsPwaShellRuntime())
+const shouldShowPwaTetrisOverlay = computed(
+  () => !isShellRuntime.value && !hasFacebookUrlAttribution(),
+)
 const playerSessionEnabled = isPlayerSessionEnabled()
 const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()
 const identityReady = shallowRef(!playerIdentityEnabled)
@@ -147,5 +152,8 @@ onUnmounted(() => {
       :load-pwa-info="loadPwaInfo"
     />
   </template>
-  <PwaFacebookBrowserGate v-if="identityReady && !isShellRuntime" />
+  <PwaFacebookBrowserGate
+    v-if="identityReady && !isShellRuntime && !shouldShowPwaTetrisOverlay"
+  />
+  <PwaTetrisLanding v-if="identityReady && shouldShowPwaTetrisOverlay" />
 </template>

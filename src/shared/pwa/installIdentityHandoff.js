@@ -6,6 +6,13 @@ function readNavigatorValue(name) {
   return String(navigator[name] || '')
 }
 
+export function isFacebookInAppBrowserRuntime({
+  userAgent = readNavigatorValue('userAgent'),
+  platform = readNavigatorValue('platform'),
+} = {}) {
+  return FACEBOOK_IN_APP_BROWSER_PATTERN.test(`${userAgent} ${platform}`)
+}
+
 export function isAndroidInstallIdentityHandoffRuntime({
   userAgent = readNavigatorValue('userAgent'),
   platform = readNavigatorValue('platform'),
@@ -26,7 +33,7 @@ export function isAndroidFacebookInAppBrowserRuntime({
 
   return (
     ANDROID_PATTERN.test(browserIdentity) &&
-    FACEBOOK_IN_APP_BROWSER_PATTERN.test(browserIdentity)
+    isFacebookInAppBrowserRuntime({ userAgent, platform })
   )
 }
 
