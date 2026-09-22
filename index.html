@@ -123,112 +123,52 @@
         pointer-events: none;
       }
 
-      .identity-first-paint__progress {
-        position: fixed;
-        z-index: 1;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 3px;
-        overflow: hidden;
-        background: rgb(255 255 255 / 12%);
-      }
-
-      .identity-first-paint__progress-bar {
-        width: 38%;
-        height: 100%;
-        background: #27ae60;
-        box-shadow: 0 0 10px rgb(39 174 96 / 55%);
-        animation: identity-first-paint-progress 1.8s ease-in-out infinite;
-      }
-
       .identity-first-paint__visual {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 20px;
-        transform: translateY(-24px);
+        justify-content: center;
+        gap: min(6.4vw, 24px);
       }
 
-      .identity-first-paint__rings {
-        position: relative;
-        width: 87px;
-        aspect-ratio: 1;
+      .identity-first-paint__logo {
+        width: min(52vw, 190px);
+        max-height: 90px;
+        object-fit: contain;
       }
 
-      .identity-first-paint__ring {
-        position: absolute;
-        border: 6px solid transparent;
-        border-right-color: currentcolor;
-        border-radius: 50%;
-        animation: identity-first-paint-rotate 1s linear infinite;
+      .identity-first-paint__dots {
+        width: min(13.333333vw, 50px);
+        aspect-ratio: 4;
+        --identity-dot: no-repeat radial-gradient(circle closest-side, #27ae60 90%, #0000);
+        background:
+          var(--identity-dot) 0% 50%,
+          var(--identity-dot) 50% 50%,
+          var(--identity-dot) 100% 50%;
+        background-size: calc(100% / 3) 100%;
+        animation: identity-first-paint-dots 1s infinite linear;
       }
 
-      .identity-first-paint__ring--one {
-        inset: 0;
-        color: #eb4747;
-      }
+      @keyframes identity-first-paint-dots {
+        33% {
+          background-size:
+            calc(100% / 3) 0%,
+            calc(100% / 3) 100%,
+            calc(100% / 3) 100%;
+        }
 
-      .identity-first-paint__ring--two {
-        inset: 4.5px;
-        color: #ebeb47;
-        animation-duration: 2s;
-      }
+        50% {
+          background-size:
+            calc(100% / 3) 100%,
+            calc(100% / 3) 0%,
+            calc(100% / 3) 100%;
+        }
 
-      .identity-first-paint__ring--three {
-        inset: 15px;
-        color: #47eb47;
-        animation-duration: 3s;
-      }
-
-      .identity-first-paint__ring--four {
-        inset: 25.5px;
-        color: #47ebeb;
-        animation-duration: 4s;
-      }
-
-      .identity-first-paint__text {
-        display: flex;
-        min-height: 24px;
-        margin: 0;
-        color: #27ae60;
-        font-size: 17px;
-        font-weight: 600;
-        line-height: 24px;
-        letter-spacing: 0.5px;
-      }
-
-      .identity-first-paint__text span {
-        display: inline-block;
-        animation: identity-first-paint-wave 1.2s ease-in-out infinite;
-      }
-
-      .identity-first-paint__text span:nth-child(2) { animation-delay: 70ms; }
-      .identity-first-paint__text span:nth-child(3) { animation-delay: 140ms; }
-      .identity-first-paint__text span:nth-child(4) { animation-delay: 210ms; }
-      .identity-first-paint__text span:nth-child(5) { animation-delay: 280ms; }
-      .identity-first-paint__text span:nth-child(6) { animation-delay: 350ms; }
-      .identity-first-paint__text span:nth-child(7) { animation-delay: 420ms; }
-      .identity-first-paint__text span:nth-child(8) { animation-delay: 490ms; }
-      .identity-first-paint__text span:nth-child(9) { animation-delay: 560ms; }
-      .identity-first-paint__text span:nth-child(10) { animation-delay: 630ms; }
-
-      @keyframes identity-first-paint-progress {
-        0% { transform: translateX(-110%); }
-        100% { transform: translateX(270%); }
-      }
-
-      @keyframes identity-first-paint-rotate {
-        to { transform: rotate(1turn); }
-      }
-
-      @keyframes identity-first-paint-wave {
-        0%,
-        60%,
-        100% { transform: translateY(0); }
-        30% {
-          color: #fff;
-          transform: translateY(-7px);
+        66% {
+          background-size:
+            calc(100% / 3) 100%,
+            calc(100% / 3) 100%,
+            calc(100% / 3) 0%;
         }
       }
 
@@ -237,15 +177,8 @@
           transition: none;
         }
 
-        .identity-first-paint__progress-bar,
-        .identity-first-paint__ring,
-        .identity-first-paint__text span {
+        .identity-first-paint__dots {
           animation: none;
-        }
-
-        .identity-first-paint__progress-bar {
-          width: 100%;
-          opacity: 0.75;
         }
       }
     </style>
@@ -267,26 +200,32 @@
       aria-live="polite"
       aria-label="Loading"
     >
-      <div
-        class="identity-first-paint__progress"
-        role="progressbar"
-        aria-label="Loading progress"
-      >
-        <div class="identity-first-paint__progress-bar"></div>
-      </div>
       <div class="identity-first-paint__visual">
-        <div class="identity-first-paint__rings" aria-hidden="true">
-          <span class="identity-first-paint__ring identity-first-paint__ring--one"></span>
-          <span class="identity-first-paint__ring identity-first-paint__ring--two"></span>
-          <span class="identity-first-paint__ring identity-first-paint__ring--three"></span>
-          <span class="identity-first-paint__ring identity-first-paint__ring--four"></span>
-        </div>
-        <p class="identity-first-paint__text" aria-hidden="true">
-          <span>l</span><span>o</span><span>a</span><span>d</span><span>i</span><span>n</span
-          ><span>g</span><span>.</span><span>.</span><span>.</span>
-        </p>
+        <img
+          class="identity-first-paint__logo"
+          data-app-loading-logo
+          src="/pwa-icons/icon-512.png"
+          alt=""
+        />
+        <span class="identity-first-paint__dots" aria-hidden="true"></span>
       </div>
     </main>
+    <script>
+      ;(function () {
+        try {
+          var cache = JSON.parse(localStorage.getItem('PWA_INFO_CACHE_V1') || 'null')
+          var pwaInfo = cache && cache.pwaInfo
+          var logo = String(
+            (pwaInfo &&
+              (pwaInfo.logo || pwaInfo.pwa_logo || pwaInfo.pwaLogo || pwaInfo.icon)) ||
+              '',
+          ).trim()
+          var image = document.querySelector('[data-app-loading-logo]')
+
+          if (logo && image) image.src = logo
+        } catch (error) {}
+      })()
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

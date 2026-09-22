@@ -94,6 +94,17 @@ let androidPermissionGrantHandled = false
 const iframeShellStyle = computed(() => ({
   '--pwa-iframe-height': iframeViewportHeight.value,
 }))
+const pwaLogoUrl = computed(() => {
+  const remoteLogo = String(
+    props.pwaInfo?.logo ||
+      props.pwaInfo?.pwa_logo ||
+      props.pwaInfo?.pwaLogo ||
+      props.pwaInfo?.icon ||
+      '',
+  ).trim()
+
+  return remoteLogo || '/pwa-icons/icon-512.png'
+})
 
 function resolveIsAndroidDevice() {
   if (typeof navigator === 'undefined') return false
@@ -563,7 +574,11 @@ onUnmounted(() => {
         @load="handleIframeLoad"
       ></iframe>
 
-      <PlayerIdentityLoading v-if="!iframeAppReady" class="pwa-iframe-shell__loading" />
+      <PlayerIdentityLoading
+        v-if="!iframeAppReady"
+        class="pwa-iframe-shell__loading"
+        :logo-url="pwaLogoUrl"
+      />
     </template>
 
     <div v-else class="pwa-iframe-shell__state">

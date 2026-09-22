@@ -42,7 +42,10 @@ const shouldClearDevServiceWorker =
   'serviceWorker' in navigator && import.meta.env.DEV && shouldDisableServiceWorker
 
 if (shouldRegisterServiceWorker) {
-  navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {})
+  navigator.serviceWorker
+    .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+    .then((registration) => registration.update())
+    .catch(() => {})
   navigator.serviceWorker.addEventListener('controllerchange', applyStoredPwaManifestUrl)
 } else if (shouldClearDevServiceWorker) {
   window.addEventListener('load', () => {

@@ -170,6 +170,28 @@ function normalizeReviews(value) {
     .filter(Boolean)
 }
 
+export function normalizeFacebookPixels(value) {
+  if (!Array.isArray(value)) return []
+
+  const seenPixelIds = new Set()
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+
+      const pixelId = String(item.pixel_id || item.pixelId || '').trim()
+      if (!pixelId || seenPixelIds.has(pixelId)) return null
+
+      seenPixelIds.add(pixelId)
+
+      return {
+        configId: item.config_id ?? item.configId ?? '',
+        pixelId,
+      }
+    })
+    .filter(Boolean)
+}
+
 function resolveLanguagePayload(language) {
   if (!Array.isArray(language) || !language.length) return {}
 
@@ -252,6 +274,7 @@ export function normalizePwaInfo(response = {}) {
     download_reward_amount: downloadRewardAmount,
     downloadRewardAmount,
     facebook: payload.facebook || null,
+    facebookPixels: normalizeFacebookPixels(payload.facebook_pixels || payload.facebookPixels),
     raw: payload,
   }
 }

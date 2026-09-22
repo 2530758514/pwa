@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import PwaFacebookBrowserGate from '@/components/pwa/PwaFacebookBrowserGate.vue'
 import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
@@ -8,6 +8,10 @@ import PwaTetrisLanding from '@/components/pwa/PwaTetrisLanding.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
 import { hasFacebookUrlAttribution } from '@/shared/analytics/facebookLandingParams'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
+import {
+  initializeFacebookPixels,
+  reportFacebookPwaLaunch,
+} from '@/shared/analytics/facebookPixel'
 import { H5_APP_URL } from '@/shared/config/env'
 import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
 import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
@@ -36,6 +40,28 @@ const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()
 const identityReady = shallowRef(!playerIdentityEnabled)
 let displayModeQuery = null
 let refreshPwaInfoAfterStandaloneReady = false
+
+watch(
+  [pwaInfo, isShellRuntime],
+  ([info, shellRuntime]) => {
+    try {
+      const pixels = info?.facebookPixels || []
+      initializeFacebookPixels(pixels)
+
+      if (!shellRuntime) return
+
+      reportFacebookPwaLaunch(pixels, {
+        pwa_id: info?.pwaId || '',
+        pwa_url_id: info?.pwaUrlId || '',
+        platform: 'android',
+        install_surface: 'shell',
+      })
+    } catch {
+      // Facebook reporting is best effort and must never block shell startup.
+    }
+  },
+  { immediate: true },
+)
 
 function applyReadyThemeColor() {
   document

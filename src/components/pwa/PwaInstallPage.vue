@@ -14,6 +14,7 @@ import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
+import { reportFacebookPwaInstall } from '@/shared/analytics/facebookPixel'
 import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
 import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
@@ -1054,6 +1055,17 @@ async function runNativeInstallPrompt() {
   installing.value = true
 
   try {
+    try {
+      reportFacebookPwaInstall(props.pwaInfo?.facebookPixels || [], {
+        pwa_id: props.pwaInfo?.pwaId || '',
+        pwa_url_id: props.pwaInfo?.pwaUrlId || '',
+        platform: 'android',
+        install_surface: 'shell',
+      })
+    } catch {
+      // Facebook reporting is best effort and must never block the native prompt.
+    }
+
     const result = await requestAddToHome({
       forceRefresh: true,
       waitMs: isAndroidPwaInstallDevice.value
