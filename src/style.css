@@ -52,7 +52,7 @@ body {
 html.is-ios-pwa,
 html.is-ios-pwa body,
 html.is-ios-pwa #app {
-  background: #ffffff;
+  background: #000000;
 }
 
 button,

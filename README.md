@@ -19,7 +19,7 @@ The phone-side `127.0.0.1` URL is treated as a trustworthy local origin, so serv
 
 The first page load uses `/manifest.webmanifest` so Chrome can always detect a valid manifest before `/pwa_h5_detail` resolves. After `/pwa_h5_detail` returns `config_url`, the shell fetches that remote manifest with a versioned no-store request, merges the install fields returned by the detail API, and switches the manifest link to a versioned dynamic manifest when the service worker can serve it. If the service worker is not controlling the page yet, the shell falls back to the versioned backend manifest URL.
 
-Remote display fields such as `name`, `short_name`, `description`, `icons`, `screenshots`, `theme_color`, and `background_color` are kept. Shell launch fields are fixed to this root-entry project: `start_url=/`, `scope=/`, and the `web+hslot` protocol handler opens `/`. A same-origin remote manifest `id` is kept when available so dynamic app identity can still differ by backend config.
+Remote display fields such as `name`, `short_name`, `description`, `icons`, and `screenshots` are kept. The shell normalizes `theme_color` and `background_color` to black so the installed app keeps one status-bar and startup surface across embedded H5 templates. Shell launch fields are fixed to this root-entry project: `start_url=/`, `scope=/`, and the `web+hslot` protocol handler opens `/`. A same-origin remote manifest `id` is kept when available so dynamic app identity can still differ by backend config.
 
 `/manifest.webmanifest` is the first-load fallback. `/pwa-dynamic-manifest.webmanifest` is the preferred install manifest after dynamic data has been resolved because it contains the normalized API fields. When `/pwa_h5_detail` returns `icon`, the generated install manifest uses that icon and does not mix in the local `/pwa-icons/*` fallback icons. The returned `config_url` is kept as the network fallback when the dynamic manifest cannot be served yet.
 
@@ -30,7 +30,7 @@ If `config_url` is cross-origin, the manifest host must allow CORS from the PWA 
 PWA installability is checked against the files that the browser receives from the public origin, not only the latest built assets. After deploying, verify these root-level files:
 
 - `/` must return the current `index.html` and reference the latest built JS/CSS.
-- `/sw.js` must be the standalone shell service worker and contain `pwa-shell-runtime-v3`. Serve it with `Content-Type: application/javascript` and `Cache-Control: no-cache` or `no-store`; purge CDN cache after each deploy.
+- `/sw.js` must be the standalone shell service worker and contain `pwa-shell-runtime-v12`. Serve it with `Content-Type: application/javascript` and `Cache-Control: no-cache` or `no-store`; purge CDN cache after each deploy.
 - `/manifest.webmanifest` must return 200 JSON with `Content-Type: application/manifest+json` or `application/json`.
 - The `config_url` returned by `/pwa_h5_detail` must return 200 JSON with CORS enabled when it is cross-origin. The current expected form is a URL like `https://static.gold7p.com/pwa/24/20/manifest.webmanifest`.
 - `/pwa-dynamic-manifest.webmanifest` is only a service-worker generated fallback. It is not the normal backend config file.

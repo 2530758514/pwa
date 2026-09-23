@@ -600,7 +600,7 @@ onUnmounted(() => {
   height: var(--pwa-iframe-height, 100dvh);
   overflow: hidden;
   overscroll-behavior: none;
-  background: #272d39;
+  background: #000000;
 }
 
 .pwa-iframe-shell__frame {
@@ -608,7 +608,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   border: 0;
-  background: #272d39;
+  background: #000000;
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease;
@@ -633,7 +633,7 @@ onUnmounted(() => {
   justify-content: center;
   gap: 14px;
   padding: 24px;
-  background: #111;
+  background: #000000;
   color: #fff;
   text-align: center;
   font-size: 15px;

@@ -66,7 +66,7 @@ watch(
 function applyReadyThemeColor() {
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', isShellRuntime.value ? '#272d39' : '#ffffff')
+    ?.setAttribute('content', isShellRuntime.value ? '#000000' : '#ffffff')
 }
 
 function syncStandaloneMode() {

@@ -1,5 +1,5 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v11'
+const SW_VERSION = 'pwa-shell-runtime-v12'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
 const NOTIFICATION_NAVIGATION_CACHE_NAME = 'pwa-shell-notification-navigation-v1'
@@ -32,8 +32,8 @@ const FALLBACK_MANIFEST = {
   scope: '/',
   display: 'standalone',
   orientation: 'portrait',
-  theme_color: '#ffffff',
-  background_color: '#ffffff',
+  theme_color: '#000000',
+  background_color: '#000000',
   prefer_related_applications: false,
   related_applications: [
     {
