@@ -32,10 +32,7 @@ import {
   parsePlayerIdentityHandoffConsumed,
   parsePlayerIdentityHandoffRequest,
 } from '../src/shared/auth/playerIdentityMessages.js'
-import {
-  isPwaH5AppReadyMessage,
-  isPwaH5VisualReadyMessage,
-} from '../src/shared/pwa/iframeLifecycleMessages.js'
+import { isPwaH5AppReadyMessage } from '../src/shared/pwa/iframeLifecycleMessages.js'
 import {
   isAndroidFacebookInAppBrowserRuntime,
   isAndroidInstallIdentityHandoffRuntime,
@@ -216,31 +213,6 @@ test('accepts only the strict versioned H5 app-ready message', () => {
   assert.equal(
     isPwaH5AppReadyMessage({
       type: 'pwa_h5_app_ready',
-      version: 2,
-    }),
-    false,
-  )
-})
-
-test('accepts only the strict versioned H5 visual-ready message', () => {
-  assert.equal(
-    isPwaH5VisualReadyMessage({
-      type: 'pwa_h5_visual_ready',
-      version: 1,
-    }),
-    true,
-  )
-  assert.equal(
-    isPwaH5VisualReadyMessage({
-      type: 'pwa_h5_visual_ready',
-      version: 1,
-      logo: 'https://example.com/not-accepted.png',
-    }),
-    false,
-  )
-  assert.equal(
-    isPwaH5VisualReadyMessage({
-      type: 'pwa_h5_visual_ready',
       version: 2,
     }),
     false,

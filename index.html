@@ -131,6 +131,12 @@
         gap: min(6.4vw, 24px);
       }
 
+      .identity-first-paint__logo {
+        width: min(52vw, 190px);
+        max-height: 90px;
+        object-fit: contain;
+      }
+
       .identity-first-paint__dots {
         width: min(13.333333vw, 50px);
         aspect-ratio: 4;
@@ -195,9 +201,31 @@
       aria-label="Loading"
     >
       <div class="identity-first-paint__visual">
+        <img
+          class="identity-first-paint__logo"
+          data-app-loading-logo
+          src="/pwa-icons/icon-512.png"
+          alt=""
+        />
         <span class="identity-first-paint__dots" aria-hidden="true"></span>
       </div>
     </main>
+    <script>
+      ;(function () {
+        try {
+          var cache = JSON.parse(localStorage.getItem('PWA_INFO_CACHE_V1') || 'null')
+          var pwaInfo = cache && cache.pwaInfo
+          var logo = String(
+            (pwaInfo &&
+              (pwaInfo.logo || pwaInfo.pwa_logo || pwaInfo.pwaLogo || pwaInfo.icon)) ||
+              '',
+          ).trim()
+          var image = document.querySelector('[data-app-loading-logo]')
+
+          if (logo && image) image.src = logo
+        } catch (error) {}
+      })()
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

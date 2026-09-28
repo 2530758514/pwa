@@ -6,7 +6,7 @@ defineOptions({
 defineProps({
   logoUrl: {
     type: String,
-    default: '',
+    default: '/pwa-icons/icon-512.png',
   },
 })
 </script>
@@ -14,7 +14,7 @@ defineProps({
 <template>
   <main class="identity-loading" aria-live="polite" aria-label="Loading">
     <div class="identity-loading__visual">
-      <img v-if="logoUrl" class="identity-loading__logo" :src="logoUrl" alt="" />
+      <img class="identity-loading__logo" :src="logoUrl" alt="" />
       <span class="identity-loading__dots" aria-hidden="true"></span>
     </div>
   </main>
@@ -31,7 +31,7 @@ defineProps({
   align-items: center;
   justify-content: center;
   color: #fff;
-  background: #000000;
+  background: #272d39;
 }
 
 .identity-loading__visual {
