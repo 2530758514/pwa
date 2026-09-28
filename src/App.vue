@@ -12,7 +12,7 @@ import {
   initializeFacebookPixels,
   reportFacebookPwaLaunch,
 } from '@/shared/analytics/facebookPixel'
-import { H5_APP_URL } from '@/shared/config/env'
+import { H5_APP_URL, TETRIS_LANDING_ENABLED } from '@/shared/config/env'
 import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
 import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
 import { resolveIsPwaShellRuntime } from '@/shared/pwa/displayMode'
@@ -33,7 +33,7 @@ const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo
 })
 const isShellRuntime = shallowRef(resolveIsPwaShellRuntime())
 const shouldShowPwaTetrisOverlay = computed(
-  () => !isShellRuntime.value && !hasFacebookUrlAttribution(),
+  () => TETRIS_LANDING_ENABLED && !isShellRuntime.value && !hasFacebookUrlAttribution(),
 )
 const playerSessionEnabled = isPlayerSessionEnabled()
 const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()

@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-pwa
+dist-tetris
+dist-standard
 dist-ssr
 *.local
 

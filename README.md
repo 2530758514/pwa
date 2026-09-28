@@ -23,6 +23,8 @@ Remote display fields such as `name`, `short_name`, `description`, and `icons` a
 
 The richer system install dialog uses the four local `/pwa-source/1.png` through `/pwa-source/4.png` screenshots. `/pwa_h5_detail` carousel images can still render on the landing page, but they do not override the system install screenshots.
 
+Two release variants are available. `npm run build:tetris` writes the Tetris-enabled package to `dist-tetris`, while `npm run build:standard` writes the package without the Tetris landing overlay to `dist-standard`. `npm run build:variants` builds both. The build-time switch is `VITE_ENABLE_TETRIS_LANDING`; the normal `npm run build` keeps the existing enabled-by-default behavior.
+
 `/manifest.webmanifest` is the first-load fallback. `/pwa-dynamic-manifest.webmanifest` is the preferred install manifest after dynamic data has been resolved because it contains the normalized API fields. When `/pwa_h5_detail` returns `icon`, the generated install manifest uses that icon and does not mix in the local `/pwa-icons/*` fallback icons. The returned `config_url` is kept as the network fallback when the dynamic manifest cannot be served yet.
 
 If `config_url` is cross-origin, the manifest host must allow CORS from the PWA shell domain. The default link/fetch mode is anonymous; set `VITE_PWA_MANIFEST_CROSSORIGIN=use-credentials` only when that manifest host requires cookies and sends credentialed CORS headers.
