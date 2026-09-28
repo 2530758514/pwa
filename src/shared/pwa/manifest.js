@@ -12,34 +12,18 @@ const PWA_MANIFEST_CROSSORIGIN = String(import.meta.env.VITE_PWA_MANIFEST_CROSSO
   .toLowerCase()
 
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const MANIFEST_INFO_SCHEMA_VERSION = 8
+const MANIFEST_INFO_SCHEMA_VERSION = 11
 const MANIFEST_VERSION_PARAM = '_pwa_manifest_v'
 const SCREENSHOT_DIMENSION_TIMEOUT_MS = 4000
 const DEFAULT_INSTALL_DESCRIPTION =
   'Welcome to our entertainment platform, designed to bring you a smooth, exciting, and enjoyable experience anytime, anywhere.'
-const DEFAULT_INSTALL_SCREENSHOTS = [
-  {
-    src: '/pwa-source/install-1.png',
-    sizes: '488x1055',
-    type: 'image/png',
-    form_factor: 'narrow',
-    label: 'Games home screen',
-  },
-  {
-    src: '/pwa-source/install-2.png',
-    sizes: '488x1055',
-    type: 'image/png',
-    form_factor: 'narrow',
-    label: 'Referral bonus screen',
-  },
-  {
-    src: '/pwa-source/install-3.png',
-    sizes: '488x1055',
-    type: 'image/png',
-    form_factor: 'narrow',
-    label: 'Recharge promotion screen',
-  },
-]
+const DEFAULT_INSTALL_SCREENSHOTS = [1, 2, 3, 4].map((index) => ({
+  src: `/pwa-source/${index}.png`,
+  sizes: '488x1055',
+  type: 'image/png',
+  form_factor: 'narrow',
+  label: `App preview ${index}`,
+}))
 const DEFAULT_ICON_192 = '/pwa-icons/icon-192.png'
 const DEFAULT_ICON_512 = '/pwa-icons/icon-512.png'
 const DEFAULT_INSTALL_ICONS = [
@@ -283,9 +267,7 @@ async function prepareRicherInstallScreenshots(screenshots = []) {
 
   const preparedScreenshots = [...groups.values()].sort((left, right) => right.length - left.length)[0] || []
 
-  if (preparedScreenshots.length) return preparedScreenshots
-
-  return DEFAULT_INSTALL_SCREENSHOTS.map((screenshot) => ({ ...screenshot }))
+  return preparedScreenshots
 }
 
 function normalizeManifestOverrides(overrides = {}) {
@@ -1014,7 +996,7 @@ async function fetchPwaManifestResponse(manifestUrl, version = Date.now()) {
 async function storePwaManifest(manifest, configUrl, options = {}) {
   const fetchedAt = Number.isFinite(options.fetchedAt) && options.fetchedAt > 0 ? options.fetchedAt : Date.now()
   const manifestUrl = normalizeManifestUrl(configUrl)
-  const richerInstallScreenshots = await prepareRicherInstallScreenshots(manifest.screenshots)
+  const richerInstallScreenshots = await prepareRicherInstallScreenshots(DEFAULT_INSTALL_SCREENSHOTS)
   const installManifest = {
     ...manifest,
     description: normalizeDescriptionValue(manifest.description) || DEFAULT_INSTALL_DESCRIPTION,

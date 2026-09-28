@@ -42,25 +42,32 @@
   ],
   "screenshots": [
     {
-      "src": "/pwa-source/install-1.png",
+      "src": "/pwa-source/1.png",
       "sizes": "488x1055",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Games home screen"
+      "label": "App preview 1"
     },
     {
-      "src": "/pwa-source/install-2.png",
+      "src": "/pwa-source/2.png",
       "sizes": "488x1055",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Referral bonus screen"
+      "label": "App preview 2"
     },
     {
-      "src": "/pwa-source/install-3.png",
+      "src": "/pwa-source/3.png",
       "sizes": "488x1055",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Recharge promotion screen"
+      "label": "App preview 3"
+    },
+    {
+      "src": "/pwa-source/4.png",
+      "sizes": "488x1055",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "App preview 4"
     }
   ],
   "lang": "en",
