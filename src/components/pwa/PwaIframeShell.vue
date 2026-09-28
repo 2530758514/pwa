@@ -21,7 +21,10 @@ import {
 } from '@/services/playerIdentityIframeBridge'
 import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
 import { applyPwaAppOpenParam, applyPwaIdentityParams } from '@/shared/pwa/identityParams'
-import { isPwaH5AppReadyMessage } from '@/shared/pwa/iframeLifecycleMessages'
+import {
+  isPwaH5AppReadyMessage,
+  isPwaH5VisualReadyMessage,
+} from '@/shared/pwa/iframeLifecycleMessages'
 import {
   pinInstallIdentityUrlToOrigin,
   resolveInstallIdentityTargetOrigin,
@@ -47,7 +50,7 @@ defineOptions({
   name: 'PwaIframeShell',
 })
 
-const emit = defineEmits(['app-ready'])
+const emit = defineEmits(['visual-ready', 'app-ready'])
 
 const props = defineProps({
   pwaInfo: {
@@ -68,6 +71,7 @@ const {
 } = usePwaShellNotifications()
 const iframeRef = useTemplateRef('iframe')
 const iframeReady = shallowRef(false)
+const iframeVisualReady = shallowRef(false)
 const iframeAppReady = shallowRef(false)
 const launchBaseIframeSrc = shallowRef('')
 const pendingNotificationNavigation = shallowRef(null)
@@ -94,18 +98,6 @@ let androidPermissionGrantHandled = false
 const iframeShellStyle = computed(() => ({
   '--pwa-iframe-height': iframeViewportHeight.value,
 }))
-const pwaLogoUrl = computed(() => {
-  const remoteLogo = String(
-    props.pwaInfo?.logo ||
-      props.pwaInfo?.pwa_logo ||
-      props.pwaInfo?.pwaLogo ||
-      props.pwaInfo?.icon ||
-      '',
-  ).trim()
-
-  return remoteLogo || '/pwa-icons/icon-512.png'
-})
-
 function resolveIsAndroidDevice() {
   if (typeof navigator === 'undefined') return false
 
@@ -328,8 +320,16 @@ function clearIframeReadyFallback() {
   iframeReadyFallbackTimer = 0
 }
 
+function revealIframeVisual() {
+  if (iframeVisualReady.value) return
+
+  iframeVisualReady.value = true
+  void nextTick(() => emit('visual-ready'))
+}
+
 function revealIframe() {
   clearIframeReadyFallback()
+  revealIframeVisual()
   if (iframeAppReady.value) return
 
   iframeAppReady.value = true
@@ -454,6 +454,11 @@ function handleIframeMessage(event) {
     return
   }
 
+  if (isPwaH5VisualReadyMessage(event.data)) {
+    revealIframeVisual()
+    return
+  }
+
   if (isPwaH5AppReadyMessage(event.data)) {
     clearPlayerIdentityParentReadyRetries()
     revealIframe()
@@ -496,6 +501,7 @@ watch(
     clearIframeReadyFallback()
     clearNotificationPermissionTimer()
     iframeReady.value = false
+    iframeVisualReady.value = false
     iframeAppReady.value = false
 
     if (sourceUrl) scheduleIframeReadyFallback()
@@ -555,7 +561,7 @@ onUnmounted(() => {
       <iframe
         ref="iframeRef"
         class="pwa-iframe-shell__frame"
-        :class="{ 'pwa-iframe-shell__frame--ready': iframeAppReady }"
+        :class="{ 'pwa-iframe-shell__frame--ready': iframeVisualReady }"
         :src="iframeSrc"
         title="H5 app"
         allow="
@@ -575,9 +581,8 @@ onUnmounted(() => {
       ></iframe>
 
       <PlayerIdentityLoading
-        v-if="!iframeAppReady"
+        v-if="!iframeVisualReady"
         class="pwa-iframe-shell__loading"
-        :logo-url="pwaLogoUrl"
       />
     </template>
 

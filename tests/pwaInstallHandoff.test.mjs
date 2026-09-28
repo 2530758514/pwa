@@ -76,6 +76,14 @@ test('installed shell defers notification permission until the H5 app is ready',
   assert.doesNotMatch(appReadySource, /completePlayerIdentityInstallHandoff/)
 })
 
+test('installed shell reveals the H5 first-paint loader before app-ready', () => {
+  assert.match(shellSource, /isPwaH5VisualReadyMessage\(event\.data\)/)
+  assert.match(shellSource, /function revealIframeVisual\(\)/)
+  assert.match(shellSource, /void nextTick\(\(\) => emit\('visual-ready'\)\)/)
+  assert.match(shellSource, /'pwa-iframe-shell__frame--ready': iframeVisualReady/)
+  assert.match(appSource, /@visual-ready="handleStandaloneVisualReady"/)
+})
+
 test('installed shell distinguishes code-acquired installs from legacy installs', () => {
   const resolverStart = serviceSource.indexOf('async function resolveHandoffRequestInternal')
   const resolverEnd = serviceSource.indexOf('\nexport const playerIdentityService', resolverStart)

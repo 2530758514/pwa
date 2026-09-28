@@ -92,6 +92,10 @@ function handleStandaloneAppReady() {
   void loadPwaInfo({ background: true })
 }
 
+function handleStandaloneVisualReady() {
+  dismissBootstrapLoading()
+}
+
 onMounted(async () => {
   displayModeQuery = window.matchMedia?.('(display-mode: standalone)') || null
   displayModeQuery?.addEventListener?.('change', syncStandaloneMode)
@@ -168,6 +172,7 @@ onUnmounted(() => {
       v-if="isShellRuntime"
       :pwa-info="pwaInfo"
       :loading="loading"
+      @visual-ready="handleStandaloneVisualReady"
       @app-ready="handleStandaloneAppReady"
     />
     <PwaPageSkeleton v-else-if="!hasPwaInfo" />
