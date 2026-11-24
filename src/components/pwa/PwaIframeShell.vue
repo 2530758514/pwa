@@ -1,4 +1,6 @@
-﻿<script setup>
+<script setup>
+import { pwaAnalytics } from '@/services/pwaAnalytics'
+import { CONTEXT_REQUEST, CONTEXT_RESPONSE } from '@/shared/pwa/statisticsClient'
 import { computed, nextTick, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 import { H5_APP_URL } from '@/shared/config/env'
 import { t } from '@/content/pwaText'
@@ -78,9 +80,7 @@ const pendingInstallHandoff = readPendingInstallHandoff()
 const installedIdentityTargetOrigin = playerIdentityEnabled
   ? resolveInstallIdentityTargetOrigin({
       completed: readCompletedInstallHandoff(),
-      pending: isValidPendingInstallHandoff(pendingInstallHandoff)
-        ? pendingInstallHandoff
-        : null,
+      pending: isValidPendingInstallHandoff(pendingInstallHandoff) ? pendingInstallHandoff : null,
       acquired: readAcquiredInstallHandoff(),
     })
   : ''
@@ -230,11 +230,9 @@ function lockLaunchBaseIframeSrc() {
   launchBaseIframeSrc.value = resolveIframeUrl(identitySourceUrl, props.pwaInfo)
 }
 
-watch(
-  [detailH5Url, () => props.loading, () => props.pwaInfo],
-  lockLaunchBaseIframeSrc,
-  { immediate: true },
-)
+watch([detailH5Url, () => props.loading, () => props.pwaInfo], lockLaunchBaseIframeSrc, {
+  immediate: true,
+})
 
 const baseIframeSrc = computed(() => launchBaseIframeSrc.value)
 
@@ -503,7 +501,20 @@ watch(
   { immediate: true },
 )
 
+async function handleStatisticsContextRequest(event) {
+  const frame = iframeRef.value
+  if (!frame || event.source !== frame.contentWindow || !iframeSrc.value) return
+  const origin = new URL(iframeSrc.value, location.origin).origin
+  if (event.origin !== origin || event.data?.type !== CONTEXT_REQUEST) return
+  const context = await pwaAnalytics.waitForContext()
+  if (!context && !pwaAnalytics.isContextResolved()) return
+  if (event.source === iframeRef.value?.contentWindow && origin === iframeOrigin.value) {
+    event.source.postMessage({ type: CONTEXT_RESPONSE, context }, origin)
+  }
+}
+
 onMounted(() => {
+  window.addEventListener('message', handleStatisticsContextRequest)
   syncIframeViewportHeight()
 
   const viewport = window.visualViewport
@@ -521,6 +532,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('message', handleStatisticsContextRequest)
   const viewport = window.visualViewport
   viewport?.removeEventListener?.('resize', syncIframeViewportHeight)
   viewport?.removeEventListener?.('scroll', syncIframeViewportHeight)

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed } from 'vue'
 import { PWA_SOURCE_ASSETS } from '@/content/pwaPageContent'
 import { t } from '@/content/pwaText'
@@ -84,7 +84,9 @@ const metricItems = computed(() =>
         ></div>
       </div>
       <div class="min-w-0 flex-1 pt-1">
-        <h1 class="flex items-center gap-1 break-words text-[24px] font-medium leading-[32px] text-[#202124]">
+        <h1
+          class="flex items-center gap-1 break-words text-[24px] font-medium leading-[32px] text-[#202124]"
+        >
           {{ app.name }}
           <img :src="PWA_SOURCE_ASSETS.verifiedIcon" alt="" class="h-[19px] w-[19px] shrink-0" />
         </h1>
@@ -100,7 +102,9 @@ const metricItems = computed(() =>
         >
           {{ app.publisher }}
         </p>
-        <p class="mt-1 flex items-center gap-1 text-[12px] font-normal leading-[16px] text-[#5f6368]">
+        <p
+          class="mt-1 flex items-center gap-1 text-[12px] font-normal leading-[16px] text-[#5f6368]"
+        >
           <img :src="PWA_SOURCE_ASSETS.shieldIcon" alt="" class="h-[14px] w-3 shrink-0" />
           <span>{{ t('pwaPage.hero.verified') }}</span>
         </p>
@@ -118,7 +122,9 @@ const metricItems = computed(() =>
             : ''
         "
       >
-        <div class="flex h-6 items-center justify-center text-[14px] font-medium leading-5 text-[#202124]">
+        <div
+          class="flex h-6 items-center justify-center text-[14px] font-medium leading-5 text-[#202124]"
+        >
           <template v-if="item.icon === 'featured'">
             <img :src="item.image" alt="" class="h-[22px] w-[22px] object-contain" />
           </template>
@@ -134,7 +140,10 @@ const metricItems = computed(() =>
       </div>
     </div>
 
-    <div v-if="showQrCode && qrCodeSrc" class="mt-7 flex min-h-[304px] items-center justify-between gap-4">
+    <div
+      v-if="showQrCode && qrCodeSrc"
+      class="mt-7 flex min-h-[304px] items-center justify-between gap-4"
+    >
       <div class="relative w-[46%] max-w-[210px] shrink-0">
         <img :src="PWA_SOURCE_ASSETS.scanPhone" alt="" class="w-full object-contain" />
         <img
@@ -172,10 +181,12 @@ const metricItems = computed(() =>
       :subtitle="installSubtitle"
       :disabled="installDisabled"
       :loading="installLoading"
-      @install="emit('install')"
+      @install="emit('install', $event)"
     />
 
-    <div class="mt-[5px] flex items-center justify-between px-[8px] text-[14px] font-normal text-[#00875f]">
+    <div
+      class="mt-[5px] flex items-center justify-between px-[8px] text-[14px] font-normal text-[#00875f]"
+    >
       <button type="button" class="flex min-h-[44px] items-center gap-3 active:opacity-70">
         <PwaIcon name="share" :size="25" />
         <span>{{ t('pwaPage.actions.share') }}</span>

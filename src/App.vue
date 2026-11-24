@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import PwaFacebookBrowserGate from '@/components/pwa/PwaFacebookBrowserGate.vue'
 import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
@@ -8,10 +8,7 @@ import PwaTetrisLanding from '@/components/pwa/PwaTetrisLanding.vue'
 import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
 import { hasFacebookUrlAttribution } from '@/shared/analytics/facebookLandingParams'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
-import {
-  initializeFacebookPixels,
-  reportFacebookPwaLaunch,
-} from '@/shared/analytics/facebookPixel'
+import { initializeFacebookPixels, reportFacebookPwaLaunch } from '@/shared/analytics/facebookPixel'
 import { H5_APP_URL, TETRIS_LANDING_ENABLED } from '@/shared/config/env'
 import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
 import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
@@ -22,13 +19,10 @@ import {
 } from '@/shared/pwa/installIdentityHandoff'
 import { shouldRenderPwaSurfaceImmediately } from '@/shared/pwa/pwaStartupPolicy'
 import { dismissBootstrapLoading } from '@/shared/ui/bootstrapLoading'
-import {
-  isPlayerIdentityNavigationError,
-  playerIdentityService,
-} from '@/services/playerIdentity'
-import { initializePwaNotificationClickTracking } from '@/services/pwaNotificationClickTracking'
+import { isPlayerIdentityNavigationError, playerIdentityService } from '@/services/playerIdentity'
+import { pwaAnalytics } from '@/services/pwaAnalytics'
 
-const { pwaInfo, loading, hasPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo({
+const { pwaInfo, loading, hasPwaInfo, hasFreshPwaInfo, loadPwaInfo, waitForPwaInfo } = usePwaInfo({
   autoLoad: false,
 })
 const isShellRuntime = shallowRef(resolveIsPwaShellRuntime())
@@ -39,7 +33,6 @@ const playerSessionEnabled = isPlayerSessionEnabled()
 const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()
 const identityReady = shallowRef(!playerIdentityEnabled)
 let displayModeQuery = null
-let refreshPwaInfoAfterStandaloneReady = false
 
 watch(
   [pwaInfo, isShellRuntime],
@@ -75,21 +68,18 @@ function syncStandaloneMode() {
 }
 
 async function showReadySurface() {
-  initializePwaNotificationClickTracking()
+  pwaAnalytics.initialize()
+  if (hasPwaInfo.value) pwaAnalytics.updateConfig(pwaInfo.value, { confirmed: false })
   applyReadyThemeColor()
   identityReady.value = true
   await nextTick()
+  pwaAnalytics.markReady()
 
   if (!isShellRuntime.value) dismissBootstrapLoading()
 }
 
 function handleStandaloneAppReady() {
   dismissBootstrapLoading()
-
-  if (!refreshPwaInfoAfterStandaloneReady) return
-
-  refreshPwaInfoAfterStandaloneReady = false
-  void loadPwaInfo({ background: true })
 }
 
 onMounted(async () => {
@@ -110,9 +100,7 @@ onMounted(async () => {
 
   try {
     const requiresInstallHandoff =
-      playerIdentityEnabled &&
-      !isShellRuntime.value &&
-      isAndroidInstallIdentityHandoffRuntime()
+      playerIdentityEnabled && !isShellRuntime.value && isAndroidInstallIdentityHandoffRuntime()
     const hasReturnedInstallHandoff = identityResult?.type === 'install_pending'
     const canRenderReadySurfaceImmediately = shouldRenderPwaSurfaceImmediately({
       hasCachedPwaInfo: hasPwaInfo.value,
@@ -123,15 +111,10 @@ onMounted(async () => {
     })
 
     if (canRenderReadySurfaceImmediately) {
-      if (isShellRuntime.value) {
-        refreshPwaInfoAfterStandaloneReady = true
-      }
-
+      // Metadata runs alongside iframe startup so first registration can receive its context.
+      // Do not await it: a statistics/configuration outage must not block the existing shell.
+      void loadPwaInfo({ background: true })
       await showReadySurface()
-
-      if (!isShellRuntime.value) {
-        void loadPwaInfo({ background: true })
-      }
       return
     }
 
@@ -176,10 +159,9 @@ onUnmounted(() => {
       :pwa-info="pwaInfo"
       :loading-info="loading"
       :load-pwa-info="loadPwaInfo"
+      :statistics-ready="hasFreshPwaInfo"
     />
   </template>
-  <PwaFacebookBrowserGate
-    v-if="identityReady && !isShellRuntime && !shouldShowPwaTetrisOverlay"
-  />
+  <PwaFacebookBrowserGate v-if="identityReady && !isShellRuntime && !shouldShowPwaTetrisOverlay" />
   <PwaTetrisLanding v-if="identityReady && shouldShowPwaTetrisOverlay" />
 </template>

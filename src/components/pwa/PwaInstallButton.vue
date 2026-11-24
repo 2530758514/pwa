@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed } from 'vue'
 import { PWA_SOURCE_ASSETS } from '@/content/pwaPageContent'
 import PwaLoadingSpinner from '@/components/PwaLoadingSpinner.vue'
@@ -41,11 +41,16 @@ const buttonClasses = computed(() => [
     class="pwa-install-button relative mt-[38px] flex h-[54px] w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-[#01875f] py-[5px] text-[16px] font-normal leading-6 text-[#ffe336] shadow-none transition"
     :class="buttonClasses"
     :disabled="disabled || loading"
-    @click="emit('install')"
+    @click="emit('install', $event)"
   >
     <span class="relative z-10 flex items-center justify-center gap-1.5 text-[#ffe336]">
       <PwaLoadingSpinner v-if="loading" color="#ffe336" :size="16" />
-      <img v-else :src="PWA_SOURCE_ASSETS.rapidIcon" alt="" class="h-[20px] w-[15px] object-contain" />
+      <img
+        v-else
+        :src="PWA_SOURCE_ASSETS.rapidIcon"
+        alt=""
+        class="h-[20px] w-[15px] object-contain"
+      />
       <span>{{ label }}</span>
     </span>
     <span v-if="subtitle" class="relative z-10 mt-1 text-[12px] font-normal text-white">

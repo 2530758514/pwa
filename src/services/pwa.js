@@ -1,4 +1,5 @@
-﻿import { pwaApi } from '@/api/pwa'
+import { pwaAnalytics } from '@/services/pwaAnalytics'
+import { pwaApi } from '@/api/pwa'
 import { normalizePwaInfo } from '@/models/pwa'
 import { setPwaIdRequestHeader } from '@/shared/api/http'
 import { writePwaInfoCache } from '@/shared/pwa/pwaInfoCache'
@@ -102,15 +103,6 @@ function applyPwaInstallMetadata(pwaInfo = {}) {
 }
 
 export const pwaService = {
-  recordAndroidPwaDownloadPageVisit() {
-    return pwaApi.recordAndroidPwaDownloadPageVisit()
-  },
-  recordAndroidPwaInstallCompletion() {
-    return pwaApi.recordAndroidPwaInstallCompletion()
-  },
-  recordAndroidPwaNotificationClick() {
-    return pwaApi.recordAndroidPwaNotificationClick()
-  },
   async getPwaInfo(params = {}, options = {}) {
     const requestKey = getPwaManifestRequestKey(params, { detail: true })
 
@@ -126,6 +118,7 @@ export const pwaService = {
 
     return await runPwaManifestRequestOnce(pendingPwaInfoRequests, requestKey, async () => {
       const pwaInfo = normalizePwaInfo(await pwaApi.getPwaInfo(params))
+      pwaAnalytics.updateConfig(pwaInfo)
       setPwaIdRequestHeader(pwaInfo.pwaId)
       writePwaInfoCache(pwaInfo)
 

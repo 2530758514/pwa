@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
 import { t } from '@/content/pwaText'
 import {
@@ -14,6 +14,7 @@ import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { pwaService } from '@/services/pwa'
 import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
+import { pwaAnalytics } from '@/services/pwaAnalytics'
 import { reportFacebookPwaInstall } from '@/shared/analytics/facebookPixel'
 import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
@@ -34,6 +35,7 @@ defineOptions({
 })
 
 const props = defineProps({
+  statisticsReady: { type: Boolean, default: false },
   pwaInfo: {
     type: Object,
     default: () => ({}),
@@ -96,21 +98,12 @@ const DIRECT_H5_BLOCKED_PARAM_NAMES = new Set([
   'token',
 ])
 
-const {
-  canPromptInstall,
-  hasInstallPromptEvent,
-  isInstalled,
-  isStandalone,
-  waitForInstallPrompt,
-} = usePwaInstallPrompt()
-const {
-  nativeInstalling,
-  prepareInstallManifest,
-  preparingInstall,
-  requestAddToHome,
-} = usePwaAddToHomeAction({
-  getPwaInfo: () => props.pwaInfo,
-})
+const { canPromptInstall, hasInstallPromptEvent, isInstalled, isStandalone, waitForInstallPrompt } =
+  usePwaInstallPrompt()
+const { nativeInstalling, prepareInstallManifest, preparingInstall, requestAddToHome } =
+  usePwaAddToHomeAction({
+    getPwaInfo: () => props.pwaInfo,
+  })
 const { tryOpenInstalledPwa } = usePwaLaunchAction()
 
 const installing = shallowRef(false)
@@ -131,7 +124,6 @@ let installProgressTimer = null
 let postInstallActionStarted = false
 let installedOpenPopupPending = false
 let installedOpenPopupDueAt = 0
-let androidPwaInstallCompletionRequest = null
 let openBrowserGuideAutoOpenAttempted = false
 let openBrowserGuideAutoOpenTimer = null
 let openBrowserGuideUserGestureRetryListening = false
@@ -149,7 +141,12 @@ const appInfo = computed(() => {
   const remote = props.pwaInfo || {}
   const screenshots = Array.isArray(remote.pwa_carousel) ? remote.pwa_carousel : []
   const remoteName = String(
-    remote.pwaInstallName || remote.installName || remote.pwa_name || remote.pwaName || remote.name || '',
+    remote.pwaInstallName ||
+      remote.installName ||
+      remote.pwa_name ||
+      remote.pwaName ||
+      remote.name ||
+      '',
   ).trim()
   const introduction = String(remote.introduction || '').trim()
 
@@ -169,8 +166,8 @@ const appInfo = computed(() => {
   }
 })
 
-const h5Link = computed(
-  () => String(props.pwaInfo?.h5_url || props.pwaInfo?.h5Url || H5_APP_URL || '').trim(),
+const h5Link = computed(() =>
+  String(props.pwaInfo?.h5_url || props.pwaInfo?.h5Url || H5_APP_URL || '').trim(),
 )
 const pwaBottomMenuDefault = computed(() => props.pwaInfo?.bottomMenuDefault || 'games')
 const showGoogleIcon = computed(() => Number(props.pwaInfo?.google_icon_enabled ?? 1) !== 0)
@@ -199,7 +196,9 @@ const shouldLockOpenBrowserGuide = computed(
 const openBrowserGuideUrl = computed(() => resolveCurrentPageUrl())
 const openBrowserGuideType = computed(() => (isApplePwaRedirectDevice.value ? 'safari' : 'chrome'))
 const openBrowserGuideName = computed(() =>
-  isApplePwaRedirectDevice.value ? t('pwaPage.browserGuide.safari') : t('pwaPage.browserGuide.chrome'),
+  isApplePwaRedirectDevice.value
+    ? t('pwaPage.browserGuide.safari')
+    : t('pwaPage.browserGuide.chrome'),
 )
 const openBrowserGuideLabel = computed(() =>
   t('pwaPage.browserGuide.openBrowser', {
@@ -235,7 +234,11 @@ const installProgressText = computed(() =>
     : '',
 )
 const installButtonLoading = computed(
-  () => installing.value || nativeInstalling.value || preparingInstall.value || installVisualActive.value,
+  () =>
+    installing.value ||
+    nativeInstalling.value ||
+    preparingInstall.value ||
+    installVisualActive.value,
 )
 const installButtonDisabled = computed(
   () =>
@@ -247,11 +250,7 @@ const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length 
 
 function appendSearchParams(targetParams, sourceParams) {
   sourceParams.forEach((value, key) => {
-    if (
-      !key ||
-      targetParams.has(key) ||
-      DIRECT_H5_BLOCKED_PARAM_NAMES.has(key.toLowerCase())
-    ) {
+    if (!key || targetParams.has(key) || DIRECT_H5_BLOCKED_PARAM_NAMES.has(key.toLowerCase())) {
       return
     }
 
@@ -656,11 +655,7 @@ function readPendingInstalledOpenPopup() {
 }
 
 function persistPendingInstalledOpenPopup() {
-  if (
-    typeof window === 'undefined' ||
-    !installedOpenPopupPending ||
-    !installedOpenPopupDueAt
-  ) {
+  if (typeof window === 'undefined' || !installedOpenPopupPending || !installedOpenPopupDueAt) {
     return
   }
 
@@ -687,17 +682,6 @@ function clearPendingInstalledOpenPopup() {
   }
 }
 
-function reportAndroidPwaInstallCompletionOnce() {
-  if (!isAndroidPwaInstallDevice.value) return Promise.resolve()
-  if (androidPwaInstallCompletionRequest) return androidPwaInstallCompletionRequest
-
-  androidPwaInstallCompletionRequest = pwaService
-    .recordAndroidPwaInstallCompletion()
-    .catch(() => null)
-
-  return androidPwaInstallCompletionRequest
-}
-
 function startInstallProgressTimer() {
   if (typeof window === 'undefined') return
 
@@ -712,7 +696,6 @@ function startInstallProgressTimer() {
 
     if (nextPercent >= INSTALL_PROGRESS_MAX_PERCENT) {
       clearInstallProgressTimer()
-      void reportAndroidPwaInstallCompletionOnce()
     }
   }, INSTALL_PROGRESS_STEP_MS)
 }
@@ -768,10 +751,13 @@ function schedulePostInstallAction(delay, options = {}) {
   installedOpenPopupPending = true
   installedOpenPopupDueAt = dueAt
   persistPendingInstalledOpenPopup()
-  postInstallActionTimer = window.setTimeout(() => {
-    postInstallActionTimer = null
-    runPostInstallAction()
-  }, Math.max(0, dueAt - Date.now()))
+  postInstallActionTimer = window.setTimeout(
+    () => {
+      postInstallActionTimer = null
+      runPostInstallAction()
+    },
+    Math.max(0, dueAt - Date.now()),
+  )
 }
 
 function restorePendingInstalledOpenPopup() {
@@ -801,8 +787,7 @@ function handlePostInstallPageVisible() {
 
   const hiddenLongEnough =
     openAppHiddenAt > 0 && Date.now() - openAppHiddenAt >= OPEN_APP_BACKGROUND_CONFIRM_MS
-  const shouldStartReturnFallback =
-    openAppBackgroundLaunchConfirmed || hiddenLongEnough
+  const shouldStartReturnFallback = openAppBackgroundLaunchConfirmed || hiddenLongEnough
 
   clearOpenAppBackgroundConfirmation()
   openAppHiddenAt = 0
@@ -1104,7 +1089,26 @@ async function runNativeInstallPrompt() {
   redirectToH5Page()
 }
 
-function handlePopupDownload(controller) {
+function handleInstallButton(event) {
+  let beforeRedirect = null
+  if (
+    event?.isTrusted &&
+    !isInstalled.value &&
+    !isStandalone.value &&
+    !installing.value &&
+    !installVisualActive.value
+  ) {
+    const recording = pwaAnalytics.track('install_click', {
+      waitForDispatch: isApplePwaRedirectDevice.value,
+    })
+    // A same-tab iOS redirect can destroy the document before the IDB transaction and fetch start.
+    // Wait only for local persistence/request dispatch, never the server's response.
+    if (isApplePwaRedirectDevice.value) beforeRedirect = recording
+  }
+  handlePopupDownload(undefined, beforeRedirect)
+}
+
+function handlePopupDownload(controller, beforeRedirect = null) {
   if (isStandalone.value) return
 
   if (installing.value || installVisualActive.value) return
@@ -1130,8 +1134,24 @@ function handlePopupDownload(controller) {
   notifyBigoAppDownload()
 
   if (isApplePwaRedirectDevice.value) {
-    redirectToH5Page()
-    controller?.finish?.({ repeat: false })
+    const navigate = () => {
+      redirectToH5Page()
+      controller?.finish?.({ repeat: false })
+    }
+    if (beforeRedirect) {
+      let deadline
+      void Promise.race([
+        beforeRedirect,
+        new Promise((resolve) => {
+          deadline = window.setTimeout(resolve, 200)
+        }),
+      ])
+        .catch(() => {})
+        .finally(() => {
+          window.clearTimeout(deadline)
+          navigate()
+        })
+    } else navigate()
     return
   }
 
@@ -1146,10 +1166,6 @@ onMounted(() => {
   restorePendingOpenH5Fallback()
   restorePendingOpenReturnH5Fallback()
   restorePendingInstalledOpenPopup()
-
-  if (isAndroidPwaInstallDevice.value) {
-    void pwaService.recordAndroidPwaDownloadPageVisit().catch(() => {})
-  }
 
   void prepareInstallPrompt().finally(() => {
     installPromptProbeFinished.value = true
@@ -1177,6 +1193,20 @@ onBeforeUnmount(() => {
   teardownQrCode()
   if (toastTimer) window.clearTimeout(toastTimer)
 })
+
+watch(
+  [() => props.statisticsReady, () => props.pwaInfo],
+  ([statisticsReady], _previous, onCleanup) => {
+    if (!statisticsReady) return
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        void pwaAnalytics.track('landing_view')
+      })
+    })
+    onCleanup(() => cancelAnimationFrame(frame))
+  },
+  { immediate: true, flush: 'post' },
+)
 
 watch(showOpenBrowserGuide, (visible) => {
   if (visible) {
@@ -1222,7 +1252,7 @@ watch(h5Link, (targetUrl) => {
           :install-progress-text="installProgressText"
           :show-qr-code="effectiveShowQrCode"
           :qr-code-src="qrCodeSrc"
-          @install="handlePopupDownload"
+          @install="handleInstallButton"
         />
         <PwaScreenshotCarousel :screenshots="appInfo.screenshots" />
         <PwaDetailsSections
@@ -1231,10 +1261,7 @@ watch(h5Link, (targetUrl) => {
           :tags="appInfo.labels"
           :updated-date="appInfo.updatedDate"
         />
-        <PwaRatingsReviews
-          :rating-bars="PWA_RATING_BARS"
-          :reviews="appInfo.reviews"
-        />
+        <PwaRatingsReviews :rating-bars="PWA_RATING_BARS" :reviews="appInfo.reviews" />
       </main>
 
       <PwaBottomNav

@@ -43,7 +43,7 @@ test('uses the global identity switch for callback initialization and install ha
   assert.match(bootstrap, /const requiresInstallHandoff =\s*playerIdentityEnabled/)
 })
 
-test('starts notification click requests only after identity and PWA info are ready', () => {
+test('initializes anonymous analytics on the ready surface without legacy notification tracking', () => {
   const bootstrap = getMountedBootstrapSource()
   const readySurfaceStart = appSource.indexOf('async function showReadySurface()')
   const readySurfaceEnd = appSource.indexOf('\nfunction handleStandaloneAppReady()', readySurfaceStart)
@@ -53,24 +53,23 @@ test('starts notification click requests only after identity and PWA info are re
   const cachedReadyIndex = bootstrap.indexOf('await showReadySurface()')
   const loadedReadyIndex = bootstrap.lastIndexOf('await showReadySurface()')
 
-  assert.match(readySurface, /initializePwaNotificationClickTracking\(\)/)
+  assert.match(readySurface, /pwaAnalytics\.initialize\(\)/)
+  assert.match(readySurface, /confirmed: false/)
+  assert.doesNotMatch(appSource, /initializePwaNotificationClickTracking/)
   assert.ok(cachedReadyIndex > identityIndex)
   assert.ok(loadedReadyIndex > pwaInfoIndex)
   assert.doesNotMatch(mainSource, /initializePwaNotificationClickTracking/)
 })
 
-test('defers cached standalone detail refresh until the H5 iframe is ready', () => {
+test('refreshes metadata alongside iframe startup rather than waiting for H5 registration', () => {
   const bootstrap = getMountedBootstrapSource()
   const readyHandlerStart = appSource.indexOf('function handleStandaloneAppReady()')
   const readyHandlerEnd = appSource.indexOf('\n}', readyHandlerStart) + 2
   const readyHandler = appSource.slice(readyHandlerStart, readyHandlerEnd)
 
-  assert.match(
-    bootstrap,
-    /if \(isShellRuntime\.value\) \{\s+refreshPwaInfoAfterStandaloneReady = true\s+\}[\s\S]*await showReadySurface\(\)[\s\S]*if \(!isShellRuntime\.value\) \{\s+void loadPwaInfo\(\{ background: true \}\)/,
-  )
-  assert.match(
-    readyHandler,
-    /dismissBootstrapLoading\(\)[\s\S]*refreshPwaInfoAfterStandaloneReady = false[\s\S]*loadPwaInfo\(\{ background: true \}\)/,
-  )
+  const refreshIndex = bootstrap.indexOf('void loadPwaInfo({ background: true })')
+  const readyIndex = bootstrap.indexOf('await showReadySurface()')
+  assert.ok(refreshIndex >= 0 && refreshIndex < readyIndex)
+  assert.doesNotMatch(readyHandler, /loadPwaInfo/)
+  assert.doesNotMatch(appSource, /refreshPwaInfoAfterStandaloneReady/)
 })

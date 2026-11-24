@@ -1,0 +1,619 @@
+import { createQueue } from './statisticsQueue.js'
+export { createQueue } from './statisticsQueue.js'
+
+const PREFIX = 'pwa-statistics-v1:'
+const TTL = 7 * 86400000
+const SESSION_TIMEOUT = 30 * 60000
+const RETRY_DELAYS = [1000, 5000, 30000, 120000, 600000, 1800000]
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const EVENT_NAMES = new Set(['landing_view', 'install_click', 'standalone_launch'])
+export const CONTEXT_REQUEST = 'PWA_STATISTICS_CONTEXT_REQUEST_V1'
+export const CONTEXT_RESPONSE = 'PWA_STATISTICS_CONTEXT_V1'
+
+export function detectPlatform(nav = navigator) {
+  if (/Android/i.test(nav.userAgent)) return 'android'
+  if (
+    /iPhone|iPad|iPod/i.test(nav.userAgent) ||
+    (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1)
+  )
+    return 'ios'
+  return ''
+}
+export function isStandalone() {
+  return (
+    window.matchMedia?.('(display-mode: standalone)')?.matches === true ||
+    navigator.standalone === true
+  )
+}
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 15) | 64
+  bytes[8] = (bytes[8] & 63) | 128
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+function read(key) {
+  try {
+    return JSON.parse(localStorage.getItem(PREFIX + key))
+  } catch {
+    return null
+  }
+}
+function save(key, value) {
+  try {
+    localStorage.setItem(PREFIX + key, JSON.stringify(value))
+  } catch {
+    /* Statistics storage must not block business. */
+  }
+}
+export function normalizeConfig(info) {
+  const raw = info?.raw || info || {}
+  const pwa_id = Number(raw.pwa_id ?? raw.pwaId ?? raw.id)
+  const pwa_url_id = Number(raw.pwa_url_id ?? raw.pwaUrlId)
+  if (
+    raw.package_mode !== 'pwa_first' ||
+    !Number.isSafeInteger(pwa_id) ||
+    pwa_id <= 0 ||
+    !Number.isSafeInteger(pwa_url_id) ||
+    pwa_url_id <= 0
+  )
+    return null
+  return { pwa_id, pwa_url_id, package_mode: 'pwa_first' }
+}
+function isEmbedded() {
+  return window.parent !== window
+}
+function offline() {
+  return navigator.onLine === false
+}
+function validContext(ctx) {
+  return (
+    ctx &&
+    normalizeConfig({ ...ctx, package_mode: 'pwa_first' }) &&
+    ['android', 'ios'].includes(ctx.platform) &&
+    ['browser', 'standalone'].includes(ctx.display_mode) &&
+    UUID_PATTERN.test(ctx.client_id) &&
+    UUID_PATTERN.test(ctx.session_id) &&
+    (ctx.display_mode === 'standalone'
+      ? UUID_PATTERN.test(ctx.installation_id)
+      : ctx.installation_id === null)
+  )
+}
+
+export function createPwaAnalytics({ send, queue = createQueue(), allowDirect = () => true }) {
+  let initialized = false,
+    ready = false,
+    confirmed = false,
+    config = null,
+    offlineDirect = false
+  let inherited = null,
+    sourceOrigin = '',
+    parentResolved = false
+  let sessionState = null,
+    landingIntent = null,
+    launchIntent = null,
+    hiddenAt = null
+  let worker = null,
+    timer = null,
+    nextAttempt = 0,
+    attempts = 0,
+    displayMode = null,
+    rateLimitUntil = 0
+  const dispatchWaiters = new Map()
+  const stableIds = new Map(),
+    intents = new Map(),
+    pendingWrites = new Map(),
+    writesInFlight = new Map(),
+    waiters = new Set(),
+    cleanups = []
+  let parentPromise = null,
+    parentPoll = null
+
+  function diagnostic(reason) {
+    const previous = read('diagnostics')
+    const entries = Array.isArray(previous) ? previous : []
+    save(
+      'diagnostics',
+      [...entries, { reason: String(reason).slice(0, 100), at: new Date().toISOString() }].slice(
+        -20,
+      ),
+    )
+  }
+  function stableId(key) {
+    const stored = read(key)
+    const id = UUID_PATTERN.test(stored) ? stored : stableIds.get(key) || uuid()
+    stableIds.set(key, id)
+    save(key, id)
+    return id
+  }
+  function currentSession() {
+    if (!sessionState || Date.now() - sessionState.lastActive >= SESSION_TIMEOUT)
+      sessionState = { id: uuid(), lastActive: Date.now() }
+    sessionState.lastActive = Date.now()
+    return sessionState.id
+  }
+  function context() {
+    try {
+      if (isEmbedded()) return inherited && { ...inherited }
+      if (!config || (!confirmed && !offline()) || !(allowDirect() || (offline() && offlineDirect)))
+        return null
+      const platform = detectPlatform()
+      if (!platform) {
+        diagnostic('unknown_platform')
+        return null
+      }
+      const standalone = isStandalone()
+      return {
+        client_id: stableId('client'),
+        session_id: currentSession(),
+        installation_id: standalone ? stableId('installation') : null,
+        pwa_id: config.pwa_id,
+        pwa_url_id: config.pwa_url_id,
+        platform,
+        display_mode: standalone ? 'standalone' : 'browser',
+      }
+    } catch {
+      diagnostic('context_unavailable')
+      return null
+    }
+  }
+  function notifyContext() {
+    for (const listener of [...waiters]) listener()
+  }
+  function schedule(delay) {
+    const due = Date.now() + Math.max(0, delay)
+    if (timer && nextAttempt <= due) return
+    clearTimeout(timer)
+    nextAttempt = due
+    timer = setTimeout(
+      () => {
+        timer = null
+        nextAttempt = 0
+        void flush()
+      },
+      Math.max(0, delay),
+    )
+  }
+  function retry(error) {
+    const value = error?.response?.headers?.['retry-after']
+    const retryAfter = value
+      ? Number.isFinite(Number(value))
+        ? Number(value) * 1000
+        : Date.parse(value) - Date.now()
+      : 0
+    if (error?.response?.status === 429)
+      rateLimitUntil = Math.max(
+        rateLimitUntil,
+        Date.now() + Math.max(retryAfter || 0, RETRY_DELAYS[0]),
+      )
+    if (error?.response?.status === 429) save('retry-after', rateLimitUntil)
+    clearTimeout(timer)
+    timer = null
+    schedule(
+      Math.max(
+        rateLimitUntil - Date.now(),
+        retryAfter || 0,
+        RETRY_DELAYS[Math.min(attempts++, RETRY_DELAYS.length - 1)],
+      ),
+    )
+  }
+  function persist(event) {
+    if (writesInFlight.has(event.event_id)) return writesInFlight.get(event.event_id)
+    const pending = queue
+      .put(event)
+      .then(() => {
+        pendingWrites.delete(event.event_id)
+      })
+      .catch((error) => {
+        diagnostic('storage_unavailable')
+        schedule(RETRY_DELAYS[0])
+        throw error
+      })
+      .finally(() => {
+        writesInFlight.delete(event.event_id)
+      })
+    writesInFlight.set(event.event_id, pending)
+    return pending
+  }
+  function dropIntent(id) {
+    intents.delete(id)
+    dispatchWaiters.get(id)?.()
+    dispatchWaiters.delete(id)
+  }
+  function bindIntents() {
+    const ctx = context()
+    for (const [id, intent] of intents) {
+      if (Date.now() - Date.parse(intent.occurred_at) > TTL) {
+        dropIntent(id)
+        diagnostic('intent_expired')
+        continue
+      }
+      if (!ctx) {
+        if (confirmed && (!config || !allowDirect() || !detectPlatform())) dropIntent(id)
+        continue
+      }
+      if (
+        isEmbedded() ||
+        (intent.event_name === 'standalone_launch') !== (ctx.display_mode === 'standalone')
+      ) {
+        dropIntent(id)
+        continue
+      }
+      const launch = intent.event_name === 'standalone_launch'
+      const event = {
+        ...ctx,
+        ...intent,
+        installation_id: launch ? ctx.installation_id : null,
+        session_id: launch ? intent.launch_session_id : ctx.session_id,
+      }
+      delete event.launch_session_id
+      pendingWrites.set(id, event)
+      intents.delete(id)
+      // Begin durable storage immediately, even while another batch is waiting on the network.
+      void persist(event).catch(() => {})
+    }
+  }
+  async function work() {
+    let batch = []
+    try {
+      for (const [id, event] of pendingWrites) {
+        if (Date.now() - Date.parse(event.occurred_at) > TTL) {
+          pendingWrites.delete(id)
+          dropIntent(id)
+          diagnostic('event_expired')
+          continue
+        }
+        await persist(event)
+      }
+      const events = await queue.all()
+      const valid = []
+      for (const event of events) {
+        if (
+          !Number.isFinite(Date.parse(event.occurred_at)) ||
+          Date.now() - Date.parse(event.occurred_at) > TTL
+        ) {
+          await queue.remove(event.event_id)
+          diagnostic('event_expired')
+        } else valid.push(event)
+      }
+      valid.sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))
+      for (const event of valid) {
+        if (
+          batch.length === 20 ||
+          new TextEncoder().encode(JSON.stringify({ schema_version: 1, events: [...batch, event] }))
+            .length > 16384
+        )
+          break
+        batch.push(event)
+      }
+      if (!batch.length) {
+        if (valid.length) {
+          await queue.remove(valid[0].event_id)
+          diagnostic('event_too_large')
+          schedule(0)
+        }
+        return
+      }
+      if (offline()) {
+        schedule(RETRY_DELAYS[0])
+        return
+      }
+      rateLimitUntil = Math.max(rateLimitUntil, Number(read('retry-after')) || 0)
+      if (Date.now() < rateLimitUntil) {
+        schedule(rateLimitUntil - Date.now())
+        return
+      }
+      const responsePromise = send(batch)
+      for (const event of batch) {
+        dispatchWaiters.get(event.event_id)?.()
+        dispatchWaiters.delete(event.event_id)
+      }
+      const response = await responsePromise
+      const results = response?.results
+      if (
+        !Array.isArray(results) ||
+        results.length !== batch.length ||
+        results.some(
+          (result, index) =>
+            !result ||
+            !['accepted', 'duplicate', 'rejected'].includes(result.status) ||
+            (result.event_id !== batch[index].event_id &&
+              !(result.status === 'rejected' && result.event_id === null)),
+        )
+      )
+        throw new Error('invalid_ack')
+      for (let i = 0; i < batch.length; i++) {
+        if (results[i].status === 'rejected') diagnostic(results[i].reason || 'rejected')
+        await queue.remove(batch[i].event_id)
+      }
+      attempts = 0
+      rateLimitUntil = 0
+      if (Number(read('retry-after')) <= Date.now()) save('retry-after', null)
+      if (valid.length > batch.length) schedule(0)
+    } catch (error) {
+      const status = error?.response?.status
+      if (status >= 400 && status < 500 && status !== 429) {
+        diagnostic(`http_${status}`)
+        for (const event of batch) await queue.remove(event.event_id).catch(() => {})
+      } else diagnostic(batch.length ? 'send_unconfirmed' : 'storage_unavailable')
+      retry(error)
+    }
+  }
+  function flush() {
+    if (worker) return worker
+    bindIntents()
+    worker = work()
+      .catch(() => {
+        diagnostic('queue_unavailable')
+        retry()
+      })
+      .finally(async () => {
+        worker = null
+        if (timer) return
+        if (pendingWrites.size) {
+          schedule(RETRY_DELAYS[0])
+          return
+        }
+        try {
+          if ((await queue.all()).length) schedule(RETRY_DELAYS[0])
+        } catch {
+          /* A retry is already scheduled by work(). */
+        }
+      })
+    return worker
+  }
+  function newIntent(name) {
+    const launch = name === 'standalone_launch'
+    return {
+      event_id: uuid(),
+      event_name: name,
+      occurred_at: new Date(Date.now()).toISOString(),
+      launch_id: launch ? uuid() : null,
+      ...(launch ? { launch_session_id: uuid() } : {}),
+    }
+  }
+  function track(name, { waitForDispatch = false } = {}) {
+    try {
+      if (!EVENT_NAMES.has(name) || isEmbedded()) return Promise.resolve()
+      if ((name === 'standalone_launch') !== isStandalone()) return Promise.resolve()
+      let intent
+      if (name === 'landing_view') intent = landingIntent ||= newIntent(name)
+      else if (name === 'standalone_launch') intent = launchIntent ||= newIntent(name)
+      else intent = newIntent(name)
+      // A lifecycle marker owns one intent, including while persistence is being retried.
+      if (intent.claimed) return Promise.resolve()
+      const dispatched = waitForDispatch
+        ? new Promise((resolve) => dispatchWaiters.set(intent.event_id, resolve))
+        : null
+      intents.set(intent.event_id, { ...intent })
+      intent.claimed = true
+      bindIntents()
+      if (name === 'standalone_launch')
+        sessionState = { id: intent.launch_session_id, lastActive: Date.now() }
+      const sending = flush()
+      return dispatched || sending
+    } catch {
+      diagnostic('event_unavailable')
+      return Promise.resolve()
+    }
+  }
+  function maybeLaunch() {
+    if (
+      !ready ||
+      document.visibilityState === 'hidden' ||
+      !isStandalone() ||
+      isEmbedded() ||
+      launchIntent
+    )
+      return
+    if (offline() && !config) {
+      launchIntent = { skipped: true }
+      diagnostic('offline_configuration_unavailable')
+      return
+    }
+    void track('standalone_launch')
+  }
+  function markReady() {
+    try {
+      initialize()
+      ready = true
+      maybeLaunch()
+    } catch {
+      diagnostic('initialization_unavailable')
+    }
+  }
+  function updateConfig(info, { confirmed: isConfirmed = true } = {}) {
+    try {
+      if (!isConfirmed) {
+        // Online cache is presentation-only; attribution waits for the current response.
+        if (confirmed || !offline()) return
+        config = normalizeConfig(info)
+        offlineDirect = Boolean(config && allowDirect())
+      } else {
+        confirmed = true
+        config = normalizeConfig(info)
+        offlineDirect = false
+        save('confirmed-config', {
+          origin: window.location.origin,
+          config,
+          directAllowed: Boolean(config && allowDirect()),
+        })
+      }
+      bindIntents()
+      notifyContext()
+      maybeLaunch()
+      void flush()
+    } catch {
+      diagnostic('configuration_unavailable')
+    }
+  }
+  function parentOrigin() {
+    try {
+      return new URL(document.referrer).origin
+    } catch {
+      return ''
+    }
+  }
+  function handleMessage(event) {
+    if (
+      !isEmbedded() ||
+      event.source !== window.parent ||
+      !parentOrigin() ||
+      event.origin !== parentOrigin() ||
+      event.data?.type !== CONTEXT_RESPONSE
+    )
+      return
+    const ctx = event.data.context
+    if (ctx !== null && !validContext(ctx)) return
+    inherited =
+      ctx &&
+      Object.fromEntries(
+        [
+          'client_id',
+          'session_id',
+          'installation_id',
+          'pwa_id',
+          'pwa_url_id',
+          'platform',
+          'display_mode',
+        ].map((key) => [key, ctx[key]]),
+      )
+    sourceOrigin = event.origin
+    parentResolved = true
+    notifyContext()
+  }
+  function requestParent() {
+    const origin = parentOrigin()
+    if (!isEmbedded() || !origin || parentResolved) return
+    window.parent.postMessage({ type: CONTEXT_REQUEST }, origin)
+  }
+  function waitForContext({ timeoutMs = 1000 } = {}) {
+    const existing = context()
+    if (existing || (isEmbedded() ? parentResolved : confirmed)) return Promise.resolve(existing)
+    return new Promise((resolve) => {
+      let timeout
+      const finish = () => {
+        const current = context()
+        if (!current && !(isEmbedded() ? parentResolved : confirmed)) return
+        clearTimeout(timeout)
+        waiters.delete(finish)
+        resolve(current)
+      }
+      waiters.add(finish)
+      timeout = setTimeout(() => {
+        waiters.delete(finish)
+        diagnostic('context_timeout')
+        resolve(null)
+      }, timeoutMs)
+      requestParent()
+    })
+  }
+  function initialize() {
+    if (initialized) return
+    initialized = true
+    if (offline()) {
+      const cached = read('confirmed-config')
+      if (cached?.origin === window.location.origin) {
+        config = normalizeConfig(cached.config)
+        offlineDirect = cached.directAllowed === true
+      }
+    }
+    function listen(target, name, listener, options) {
+      target.addEventListener(name, listener, options)
+      cleanups.push(() => target.removeEventListener(name, listener, options))
+    }
+    listen(window, 'message', handleMessage)
+    const resume = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt ??= Date.now()
+        return
+      }
+      if (hiddenAt !== null && Date.now() - hiddenAt >= SESSION_TIMEOUT) launchIntent = null
+      hiddenAt = null
+      maybeLaunch()
+      void flush()
+    }
+    listen(document, 'visibilitychange', resume)
+    listen(window, 'pageshow', resume)
+    listen(window, 'online', () => {
+      clearTimeout(timer)
+      timer = null
+      requestParent()
+      void flush()
+    })
+    const activity = () => {
+      if (sessionState) sessionState.lastActive = Date.now()
+    }
+    listen(window, 'pointerdown', activity, { passive: true })
+    listen(window, 'keydown', activity)
+    displayMode = window.matchMedia?.('(display-mode: standalone)')
+    if (displayMode?.addEventListener) listen(displayMode, 'change', maybeLaunch)
+    if (isEmbedded() && parentOrigin()) {
+      requestParent()
+      parentPoll = setInterval(() => {
+        if (parentResolved) {
+          clearInterval(parentPoll)
+          parentPoll = null
+        } else requestParent()
+      }, 250)
+      const deadline = setTimeout(() => {
+        clearInterval(parentPoll)
+        parentPoll = null
+      }, 1000)
+      cleanups.push(() => clearTimeout(deadline))
+    }
+    void flush()
+  }
+  async function registrationHeaders({ preserveIosBrowser = false } = {}) {
+    try {
+      // Existing iOS landing -> Safari H5 registration remains advertisement-attributed.
+      if (preserveIosBrowser && !isEmbedded() && detectPlatform() === 'ios' && !isStandalone())
+        return {}
+      initialize()
+      const ctx =
+        context() ||
+        (isEmbedded()
+          ? await (parentPromise ||= waitForContext().finally(() => {
+              parentPromise = null
+            }))
+          : null)
+      if (!ctx) return {}
+      const headers = {
+        'X-Pwa-Id': ctx.pwa_id,
+        'X-Pwa-Url-Id': ctx.pwa_url_id,
+        'X-Pwa-Platform': ctx.platform,
+        'X-Pwa-Display-Mode': ctx.display_mode,
+        'X-Pwa-Client-Id': ctx.client_id,
+      }
+      if (ctx.installation_id) headers['X-Pwa-Installation-Id'] = ctx.installation_id
+      if (sourceOrigin && sourceOrigin !== window.location.origin)
+        headers['X-Pwa-Source-Origin'] = sourceOrigin
+      return headers
+    } catch {
+      diagnostic('registration_context_unavailable')
+      return {}
+    }
+  }
+  function stop() {
+    for (const cleanup of cleanups.splice(0)) cleanup()
+    for (const resolve of dispatchWaiters.values()) resolve()
+    dispatchWaiters.clear()
+    clearInterval(parentPoll)
+    clearTimeout(timer)
+    initialized = false
+  }
+  return {
+    initialize,
+    markReady,
+    updateConfig,
+    context,
+    track,
+    flush,
+    registrationHeaders,
+    waitForContext,
+    isContextResolved: () => (isEmbedded() ? parentResolved : confirmed),
+    maybeLaunch,
+    stop,
+  }
+}

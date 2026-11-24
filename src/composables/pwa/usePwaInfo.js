@@ -6,13 +6,14 @@ import { applyStoredPwaManifestUrl } from '@/shared/pwa/manifest'
 import { readPwaInfoCache } from '@/shared/pwa/pwaInfoCache'
 import { resolveIsPwaStandalone } from '@/shared/pwa/displayMode'
 
-const cachedPwaInfo = (
-  resolveIsPwaStandalone()
+const cachedPwaInfo =
+  (resolveIsPwaStandalone()
     ? readPwaInfoCache({ maxAgeMs: Number.POSITIVE_INFINITY })
     : readPwaInfoCache()
-)?.pwaInfo || {}
+  )?.pwaInfo || {}
 const pwaInfo = shallowRef(cachedPwaInfo)
 const loading = shallowRef(false)
+const hasFreshPwaInfo = shallowRef(false)
 const refreshing = shallowRef(false)
 const error = shallowRef(null)
 const PWA_INFO_WAIT_MS = 8000
@@ -85,6 +86,7 @@ async function loadPwaInfo(options = {}) {
 
       if (hasUsablePwaInfo(nextPwaInfo)) {
         pwaInfo.value = nextPwaInfo
+        hasFreshPwaInfo.value = true
         retryAttempt = 0
         clearRetryTimer()
       }
@@ -136,6 +138,7 @@ export function usePwaInfo({ autoLoad = true } = {}) {
     refreshing: readonly(refreshing),
     error: readonly(error),
     hasPwaInfo,
+    hasFreshPwaInfo: readonly(hasFreshPwaInfo),
     loadPwaInfo,
     waitForPwaInfo,
   }
