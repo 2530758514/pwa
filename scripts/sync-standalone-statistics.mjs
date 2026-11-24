@@ -13,9 +13,9 @@ const source = readFileSync(page, 'utf8').replace(/\r\n/g, '\n')
 const first = source.indexOf(start)
 const last = source.indexOf(end, first)
 if (first < 0 || last < 0) throw new Error('Missing embedded statistics markers')
-const shared = 'const { createPwaAnalytics } = (() => {\n' +
+const shared = 'const { createPwaAnalytics, createQueue } = (() => {\n' +
   (queue + '\n' + client).replace(/\r\n/g, '\n').trim() +
-  '\nreturn { createPwaAnalytics };\n})();'
+  '\nreturn { createPwaAnalytics, createQueue };\n})();'
 const output = source.slice(0, first + start.length) + '\n' + shared + '\n      ' + source.slice(last)
 if (process.argv.includes('--check')) {
   if (output !== source) throw new Error('Run node scripts/sync-standalone-statistics.mjs')

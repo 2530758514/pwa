@@ -14,8 +14,9 @@ const defaultDetail = {
 const response = (data, status = 200) => new Response(JSON.stringify(data), { status })
 
 function setup({ href = 'https://entry.test/', detail = defaultDetail, detailFetch,
-  statisticsFetch, storageFailure = false, userAgent = 'Android' } = {}) {
-  const requests = [], navigations = [], timers = new Map(), events = new Map(), stored = new Map()
+  statisticsFetch, storageFailure = false, storageDelay = false, beforePersist,
+  userAgent = 'Android' } = {}) {
+  const requests = [], navigations = [], timeline = [], timers = new Map(), events = new Map(), stored = new Map()
   const nodes = new Map()
   let timerId = 0
   const elements = id => {
@@ -24,7 +25,7 @@ function setup({ href = 'https://entry.test/', detail = defaultDetail, detailFet
     return nodes.get(id)
   }
   const window = {
-    location: { href, origin: new URL(href).origin, replace: url => navigations.push(url) },
+    location: { href, origin: new URL(href).origin, replace: url => { timeline.push('navigate'); navigations.push(url) } },
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
     addEventListener() {}, removeEventListener() {},
   }
@@ -35,6 +36,7 @@ function setup({ href = 'https://entry.test/', detail = defaultDetail, detailFet
       return detailFetch ? detailFetch(options) : response({ code: 200, data: detail })
     }
     assert.equal(url, '/api/web_pwa_statistics')
+    timeline.push('statistics')
     const body = JSON.parse(options.body)
     if (statisticsFetch) return statisticsFetch(body, options)
     return response({ code: 200, data: { results: body.events.map(event => ({ event_id: event.event_id, status: 'accepted' })) } })
@@ -48,16 +50,27 @@ function setup({ href = 'https://entry.test/', detail = defaultDetail, detailFet
     crypto: webcrypto, TextEncoder,
     setTimeout: (callback, ms) => { timers.set(++timerId, { callback, ms }); return timerId },
     clearTimeout: id => timers.delete(id), setInterval() {}, clearInterval() {},
-    createQueue: () => ({
-      put: async event => { if (storageFailure) throw new Error('storage_blocked'); events.set(event.event_id, event) },
-      all: async () => [...events.values()], remove: async id => events.delete(id),
+    testCreateQueue: () => ({
+      put: async event => {
+        if (storageFailure) throw new Error('storage_blocked');
+        if (storageDelay) await new Promise(() => {});
+        if (beforePersist) await beforePersist();
+        events.set(event.event_id, event)
+      },
+      all: async () => {
+        if (storageFailure) throw new Error('storage_blocked');
+        if (storageDelay) await new Promise(() => {});
+        return [...events.values()]
+      },
+      remove: async id => events.delete(id),
     }),
   }
   // Execute the actual embedded client; replace only the browser storage adapter.
-  runInNewContext(script.replace('function createQueue()', 'function browserCreateQueue()'), context)
+  runInNewContext(script.replace(/function createQueue\(\) \{[\s\S]*?\r?\n\}/,
+    'function createQueue() { return testCreateQueue(); }'), context)
   const settle = async () => { for (let i = 0; i < 100; i++) await Promise.resolve() }
   return {
-    requests, navigations, nodes, events, settle,
+    requests, navigations, timeline, nodes, events, settle,
     statistics: () => requests.filter(item => item.url === '/api/web_pwa_statistics'),
     async fire(ms) {
       const pending = [...timers].filter(([, timer]) => timer.ms === ms)
@@ -113,20 +126,52 @@ test('one V1 landing visit uses confirmed IDs, never URL IDs, without install or
   assert.equal(app.navigations.length, 1)
 })
 
-test('does not wait for a statistics server response before redirecting', async () => {
-  const app = setup({ statisticsFetch: () => new Promise(() => {}) })
+test('calls statistics first and waits for its response before redirecting', async () => {
+  let respond
+  const app = setup({ statisticsFetch: body => new Promise(resolve => {
+    respond = () => resolve(response({ code: 200, data: { results: body.events.map(event => ({ event_id: event.event_id, status: 'accepted' })) } }))
+  }) })
+  await app.settle()
+  assert.equal(app.statistics().length, 1)
+  assert.equal(app.navigations.length, 0)
+  respond()
+  await app.settle()
+  assert.equal(app.navigations.length, 1)
+  assert.deepEqual(app.timeline, ['statistics', 'navigate'])
+})
+
+for (const [name, options] of [['blocked storage', { storageFailure: true }], ['slow IDB initialization', { storageDelay: true }]]) {
+  test(`${name} still invokes statistics before navigation`, async () => {
+    const app = setup(options)
+    await app.settle()
+    assert.equal(app.statistics().length, 1)
+    assert.equal(app.navigations.length, 1)
+    assert.deepEqual(app.timeline, ['statistics', 'navigate'])
+  })
+}
+
+test('an acknowledgement received before the durable write removes that event after the write finishes', async () => {
+  let finishWrite
+  const pending = new Promise(resolve => { finishWrite = resolve })
+  const app = setup({ beforePersist: () => pending })
   await app.settle()
   assert.equal(app.statistics().length, 1)
   assert.equal(app.navigations.length, 1)
+  finishWrite()
+  await app.settle()
+  assert.equal(app.events.size, 0)
 })
 
-test('blocked persistence cannot delay H5 beyond the 200ms deadline', async () => {
-  const app = setup({ storageFailure: true })
+test('an unresponsive statistics endpoint cannot block H5 beyond ten seconds', async () => {
+  const app = setup({ statisticsFetch: (_body, options) => new Promise((_, reject) => {
+    options.signal.addEventListener('abort', () => reject(new DOMException('timeout', 'AbortError')))
+  }) })
   await app.settle()
+  assert.equal(app.statistics().length, 1)
   assert.equal(app.navigations.length, 0)
-  await app.fire(200)
+  await app.fire(10000)
   assert.equal(app.navigations.length, 1)
-  assert.equal(app.statistics().length, 0)
+  assert.deepEqual(app.timeline, ['statistics', 'navigate'])
 })
 
 for (const [name, detail, userAgent] of [
