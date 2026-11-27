@@ -71,6 +71,16 @@ If Android Chrome has already seen an old service worker, clear site data or unr
 
 白屏入口使用独立的金色底部弹窗和纯黑遮罩，没有关闭按钮、取消或安装教程；原界面版的浏览器引导保持不变。奖励只展示本次 detail 成功返回的 `download_reward_amount`，缺失或非法时不显示金额区域，零金额正常显示。
 
-白屏入口挂载后先立即尝试一次 Android Chrome Intent 或 iOS HTTPS Safari 协议，紧接着正常挂载金色引导及其图片，不增加定时等待。切到后台时暂不显示引导，返回后显示但不再次自动唤起；配置刷新也不重复唤起。按钮点击允许主动重试，短时间重复点击会节流。iOS HTTP 调试页面不会调用 Safari 私有协议。失败或取消不关闭弹窗，也不在 Facebook 内跳 H5。系统提示与真实浏览器交接仍需 HTTPS 真机验收。
+白屏入口挂载后先立即尝试一次 Android Chrome Intent 或 iOS HTTPS Safari 协议，紧接着正常挂载金色引导及其图片，不增加定时等待。切到后台时暂不显示引导，返回后显示但不再次自动唤起；配置刷新也不重复唤起。按钮点击允许主动重试，短时间重复点击会节流。iOS HTTP 入口由服务器强制跳转 HTTPS，前端不维护域名名单。失败或取消不关闭弹窗，也不在 Facebook 内跳 H5。系统提示与真实浏览器交接仍需 HTTPS 真机验收。
 
 金色弹窗组件回归：运行 `npx vite --port 4013`，再用 Playwright CLI 执行 `run-code --filename scripts/verify-blank-guide-browser.cjs`，覆盖金额更新、零金额、长金额、无效数据、图片失败与窄屏/横屏，截图输出在 `output/`。
+
+### Facebook 分享图片与 HTTP 广告入口
+
+分享图统一使用公开 OSS/CDN 地址 `https://static.gold7p.com/assets2/assets/pwa/facebook-cover.png`（800×480）。本地 `public/share/facebook-cover.png` 保留为同内容副本。构建按 `VITE_FACEBOOK_SHARE_IMAGE_URL` 将完整图片 URL 写入初始 HTML 的 Open Graph 标签；不改变页面标题或业务事件。未配置时不额外注入图片标签。
+
+开发、Android 调试、测试、正式及配置示例均使用同一 OSS 图片 URL，分享链接可使用不同域名；不需要为新增广告域名重新配置图片地址。`npm run build` 和 `npm run build:test` 均将此 URL 写入构建产物。发布后使用 Facebook Sharing Debugger 重新抓取实际分享链接。OSS 地址须保持公开可访问，不能要求登录或拦截 Facebook 爬虫；当前响应经过 CloudFront 并有长期缓存，更换图片建议使用新文件名或版本 URL，并刷新 CDN/Facebook 缓存。
+
+HTTP → HTTPS 由服务器统一重定向，前端不维护域名名单或自动转换规则。新增落地页域名只需部署同样的站点、配置 HTTPS 和后端绑定，不必为适配域名重新打包；浏览器唤起沿用当前访问地址及广告参数。多个落地页域名可以共用同一个公开分享图片 URL，图片资源地址保持可访问即可。
+
+分享卡片不设置固定标题；主入口与旧中转页的初始 `<title>` 均留空，避免输出 Loading 或默认项目名。运行中的 PWA 仍可按接口设置应用名称。Facebook 可能自行显示域名或选取其他文字，已有 Loading 缓存需在发布后通过 Sharing Debugger 对实际分享链接重新抓取；前端无法强制清除 Facebook 的缓存。

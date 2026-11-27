@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import postcssPxToViewport from 'postcss-px-to-viewport-8-plugin'
 import { fileURLToPath, URL } from 'node:url'
+import { facebookShareImagePlugin } from './scripts/facebook-share-image.mjs'
 import { rewriteApiProxyPath } from './src/shared/api/proxyPath.js'
 
 const APP_DESIGN_WIDTH = 375
@@ -68,7 +69,7 @@ export default defineConfig(({ mode }) => {
   const stripProxyPrefix = env.VITE_PROXY_STRIP_PREFIX === 'true'
 
   return {
-    plugins: [vue(), tailwindcss()],
+    plugins: [vue(), tailwindcss(), facebookShareImagePlugin(env)],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
