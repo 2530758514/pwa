@@ -71,6 +71,6 @@ If Android Chrome has already seen an old service worker, clear site data or unr
 
 白屏入口使用独立的金色底部弹窗和纯黑遮罩，没有关闭按钮、取消或安装教程；原界面版的浏览器引导保持不变。奖励只展示本次 detail 成功返回的 `download_reward_amount`，缺失或非法时不显示金额区域，零金额正常显示。
 
-Android Chrome Intent 与 iOS HTTPS Safari 协议均在弹窗挂载约一秒后自动尝试一次，不因返回页面或配置刷新而重复。提前点击 Open in Browser 会取消待执行的自动尝试；后续按钮点击允许主动重试，短时间重复点击会节流。iOS HTTP 调试页面不会调用 Safari 私有协议。失败或取消不关闭弹窗，也不在 Facebook 内跳 H5。系统提示与真实浏览器交接仍需 HTTPS 真机验收。
+白屏入口挂载后先立即尝试一次 Android Chrome Intent 或 iOS HTTPS Safari 协议，紧接着正常挂载金色引导及其图片，不增加定时等待。切到后台时暂不显示引导，返回后显示但不再次自动唤起；配置刷新也不重复唤起。按钮点击允许主动重试，短时间重复点击会节流。iOS HTTP 调试页面不会调用 Safari 私有协议。失败或取消不关闭弹窗，也不在 Facebook 内跳 H5。系统提示与真实浏览器交接仍需 HTTPS 真机验收。
 
 金色弹窗组件回归：运行 `npx vite --port 4013`，再用 Playwright CLI 执行 `run-code --filename scripts/verify-blank-guide-browser.cjs`，覆盖金额更新、零金额、长金额、无效数据、图片失败与窄屏/横屏，截图输出在 `output/`。

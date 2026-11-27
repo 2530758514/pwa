@@ -11,36 +11,43 @@ export function buildBlankBrowserOpenUrl(value, isApple) {
   }
 }
 
-// One automatic attempt per mounted white-screen guide, independent of metadata refreshes.
-export function createBlankBrowserOpener({ target, navigate, setTimer = setTimeout,
-  clearTimer = clearTimeout, now = Date.now, canOpen = () => true }) {
-  let timer = null
+// Dispatch before rendering the fallback guide. Returning to the page only reveals
+// the guide; it never triggers another automatic browser-opening attempt.
+export function createBlankBrowserOpener({ target, navigate, now = Date.now,
+  canOpen = () => true, onFallback = () => {} }) {
   let started = false
   let disposed = false
+  let fallbackDue = false
+  let revealed = false
   let lastAttempt = -Infinity
+  function reveal() {
+    if (disposed || revealed || !fallbackDue || !canOpen()) return
+    revealed = true
+    onFallback()
+  }
   function attempt() {
     if (disposed || !target || !canOpen()) return
     lastAttempt = now()
-    try { navigate(target) } catch { /* Keep the guide visible if the host rejects the scheme. */ }
-  }
-  function cancelTimer() {
-    if (timer !== null) clearTimer(timer)
-    timer = null
+    try { navigate(target) } catch { /* The fallback stays available if the host rejects the scheme. */ }
   }
   return {
     start() {
       if (started || disposed) return
       started = true
-      if (!target) return
-      timer = setTimer(() => { timer = null; attempt() }, 1000)
+      attempt()
+      fallbackDue = true
+      reveal()
     },
     open() {
+      if (disposed) return
       started = true
-      cancelTimer()
+      fallbackDue = true
+      reveal()
       if (now() - lastAttempt < 800) return
       attempt()
     },
-    dispose() { disposed = true; cancelTimer() },
+    resume() { reveal() },
+    dispose() { disposed = true },
   }
 }
 

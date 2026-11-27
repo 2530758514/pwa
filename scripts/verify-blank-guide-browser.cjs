@@ -10,7 +10,7 @@ async (page) => {
     if (failImages) await context.route('**/*.webp', route=>route.abort());
     const tab = await context.newPage();
     const errors=[]; tab.on('pageerror',e=>errors.push(e.message));
-    await tab.goto('http://127.0.0.1:4013/tests/fixtures/blankBrowserGuide.html');
+    await tab.goto('http://127.0.0.1:4013/tests/fixtures/blankBrowserGuide.html', {waitUntil:'commit'});
     const dialog=tab.getByRole('dialog'); await dialog.waitFor();
     if(await dialog.getByRole('button').count() !== 1) throw Error(name+' unexpected controls');
     if(await dialog.locator('.blank-browser-guide__hero').count()) throw Error('unconfirmed reward shown');

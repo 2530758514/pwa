@@ -23,9 +23,9 @@ async (page) => {
     });
     await context.route('https://h5.example.test/**', route => route.fulfill({contentType:'text/html',body:'<p>H5 mock</p>'}));
     const source = `http://127.0.0.1:${port}/?campaign=entry${shell?'&pwa_launch=1':''}`;
-    await tab.goto(source);
-    if (port===4011 && !shell) {
-      const paint = await tab.evaluate(()=>({bg:getComputedStyle(document.body).backgroundColor, text:document.querySelector('#app').innerText,loader:getComputedStyle(document.querySelector('#identity-bootstrap-loading')).display}));
+    await tab.goto(source, {waitUntil:facebook ? 'commit' : 'domcontentloaded'});
+    if (port===4011 && !shell && !facebook) {
+      const paint = await tab.evaluate(()=>({bg:getComputedStyle(document.body).backgroundColor, text:document.querySelector('#app').innerText,loader:document.querySelector('#identity-bootstrap-loading') ? getComputedStyle(document.querySelector('#identity-bootstrap-loading')).display : 'none'}));
       if (paint.bg !== 'rgb(255, 255, 255)' || paint.loader !== 'none') throw Error(name+' initial paint '+JSON.stringify(paint));
       if (!facebook && paint.text) throw Error(name+' visible content before detail: '+paint.text);
     }

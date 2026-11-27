@@ -14,6 +14,7 @@ const rewardSize = computed(() => ({
   'blank-browser-guide__reward--compact': rewardText.value.length > 5,
   'blank-browser-guide__reward--small': rewardText.value.length > 8,
 }))
+const guideVisible = shallowRef(false)
 const plaqueFailed = shallowRef(false)
 const buttonFailed = shallowRef(false)
 const tilesFailed = shallowRef(false)
@@ -22,15 +23,25 @@ const isApple = /iPhone|iPad|iPod/i.test(navigator.userAgent + navigator.platfor
 const opener = createBlankBrowserOpener({
   target: buildBlankBrowserOpenUrl(window.location.href, isApple),
   navigate: target => { window.location.href = target },
+  onFallback: () => { guideVisible.value = true },
   canOpen: () => document.visibilityState !== 'hidden',
 })
-onMounted(() => opener.start())
-onBeforeUnmount(() => opener.dispose())
+function handleReturn() { opener.resume() }
+onMounted(() => {
+  opener.start()
+  window.addEventListener('pageshow', handleReturn)
+  document.addEventListener('visibilitychange', handleReturn)
+})
+onBeforeUnmount(() => {
+  opener.dispose()
+  window.removeEventListener('pageshow', handleReturn)
+  document.removeEventListener('visibilitychange', handleReturn)
+})
 </script>
 
 <template>
   <div class="blank-browser-guide" @click.stop>
-    <section class="blank-browser-guide__panel" role="dialog" aria-modal="true" aria-labelledby="blank-browser-title" aria-describedby="blank-browser-description">
+    <section v-if="guideVisible" class="blank-browser-guide__panel" role="dialog" aria-modal="true" aria-labelledby="blank-browser-title" aria-describedby="blank-browser-description">
       <header class="blank-browser-guide__header">
         <img v-if="!plaqueFailed" :src="titlePlaque" alt="" width="1200" height="359" class="blank-browser-guide__plaque" @error="plaqueFailed = true" />
         <h1 id="blank-browser-title" class="blank-browser-guide__title">Open in Browser</h1>
