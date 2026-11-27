@@ -83,4 +83,8 @@ If Android Chrome has already seen an old service worker, clear site data or unr
 
 HTTP → HTTPS 由服务器统一重定向，前端不维护域名名单或自动转换规则。新增落地页域名只需部署同样的站点、配置 HTTPS 和后端绑定，不必为适配域名重新打包；浏览器唤起沿用当前访问地址及广告参数。多个落地页域名可以共用同一个公开分享图片 URL，图片资源地址保持可访问即可。
 
-分享卡片不设置固定标题；主入口与旧中转页的初始 `<title>` 均留空，避免输出 Loading 或默认项目名。运行中的 PWA 仍可按接口设置应用名称。Facebook 可能自行显示域名或选取其他文字，已有 Loading 缓存需在发布后通过 Sharing Debugger 对实际分享链接重新抓取；前端无法强制清除 Facebook 的缓存。
+静态构建不写固定标题；主入口与旧中转页的初始 `<title>` 均留空，避免输出 Loading 或默认项目名。主入口可按下节的服务器配置生成分享标题。运行中的 PWA 仍可按接口设置应用名称。Facebook 可能自行显示域名或选取其他文字，已有 Loading 缓存需在发布后通过 Sharing Debugger 对实际分享链接重新抓取；前端无法强制清除 Facebook 的缓存。
+
+### 按访问域名显示 Facebook 分享标题
+
+分享标题为 `Online Slots at {hostname去掉最后一段后缀}| 700+ Real Money Slot Games`，例如 `spinvibe777.spin7m.com` 对应 `spinvibe777.spin7m`。前端保留空标题标记，由 Nginx 在响应 HTML 时填充；一份包可复用到多个域名，无需按域名重新构建。配置及宝塔安装步骤见 [deploy/nginx/README.md](deploy/nginx/README.md)。未安装服务器配置时仍为空标题，前端无法替代这一步让 Facebook 动态抓取域名标题。
