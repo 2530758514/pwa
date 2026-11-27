@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import PwaFacebookBrowserGate from '@/components/pwa/PwaFacebookBrowserGate.vue'
+import PwaBlankRedirect from '@/components/pwa/PwaBlankRedirect.vue'
 import PwaInstallPage from '@/components/pwa/PwaInstallPage.vue'
 import PwaIframeShell from '@/components/pwa/PwaIframeShell.vue'
 import PwaPageSkeleton from '@/components/PwaPageSkeleton.vue'
@@ -9,7 +10,7 @@ import { usePwaInfo } from '@/composables/pwa/usePwaInfo'
 import { hasFacebookUrlAttribution } from '@/shared/analytics/facebookLandingParams'
 import { capturePwaLandingAttribution } from '@/shared/analytics/pwaLandingAttribution'
 import { initializeFacebookPixels, reportFacebookPwaLaunch } from '@/shared/analytics/facebookPixel'
-import { H5_APP_URL, TETRIS_LANDING_ENABLED } from '@/shared/config/env'
+import { H5_APP_URL, SHOW_PWA_LANDING, TETRIS_LANDING_ENABLED } from '@/shared/config/env'
 import { isPlayerIdentityEnabled } from '@/shared/config/playerIdentity'
 import { isPlayerSessionEnabled } from '@/shared/config/playerSession'
 import { resolveIsPwaShellRuntime } from '@/shared/pwa/displayMode'
@@ -27,7 +28,7 @@ const { pwaInfo, loading, hasPwaInfo, hasFreshPwaInfo, loadPwaInfo, waitForPwaIn
 })
 const isShellRuntime = shallowRef(resolveIsPwaShellRuntime())
 const shouldShowPwaTetrisOverlay = computed(
-  () => TETRIS_LANDING_ENABLED && !isShellRuntime.value && !hasFacebookUrlAttribution(),
+  () => SHOW_PWA_LANDING && TETRIS_LANDING_ENABLED && !isShellRuntime.value && !hasFacebookUrlAttribution(),
 )
 const playerSessionEnabled = isPlayerSessionEnabled()
 const playerIdentityEnabled = !playerSessionEnabled && isPlayerIdentityEnabled()
@@ -57,6 +58,7 @@ watch(
 )
 
 function applyReadyThemeColor() {
+  if (!SHOW_PWA_LANDING) document.documentElement.classList.toggle('pwa-blank-entry', !isShellRuntime.value)
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', isShellRuntime.value ? '#000000' : '#ffffff')
@@ -97,6 +99,12 @@ onMounted(async () => {
   }
 
   capturePwaLandingAttribution()
+
+  if (!SHOW_PWA_LANDING && !isShellRuntime.value) {
+    void loadPwaInfo({ background: true })
+    await showReadySurface()
+    return
+  }
 
   try {
     const requiresInstallHandoff =
@@ -153,6 +161,12 @@ onUnmounted(() => {
       :loading="loading"
       @app-ready="handleStandaloneAppReady"
     />
+    <PwaBlankRedirect
+      v-else-if="!SHOW_PWA_LANDING"
+      :pwa-info="pwaInfo"
+      :statistics-ready="hasFreshPwaInfo"
+      :load-pwa-info="loadPwaInfo"
+    />
     <PwaPageSkeleton v-else-if="!hasPwaInfo" />
     <PwaInstallPage
       v-else
@@ -162,6 +176,6 @@ onUnmounted(() => {
       :statistics-ready="hasFreshPwaInfo"
     />
   </template>
-  <PwaFacebookBrowserGate v-if="identityReady && !isShellRuntime && !shouldShowPwaTetrisOverlay" />
+  <PwaFacebookBrowserGate v-if="SHOW_PWA_LANDING && identityReady && !isShellRuntime && !shouldShowPwaTetrisOverlay" />
   <PwaTetrisLanding v-if="identityReady && shouldShowPwaTetrisOverlay" />
 </template>

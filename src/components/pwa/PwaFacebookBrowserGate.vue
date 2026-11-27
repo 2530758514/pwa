@@ -1,12 +1,17 @@
 <script setup>
 import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import { t } from '@/content/pwaText'
-import { isAndroidFacebookInAppBrowserRuntime } from '@/shared/pwa/installIdentityHandoff'
+import { isFacebookInAppBrowserRuntime, isAndroidFacebookInAppBrowserRuntime } from '@/shared/pwa/installIdentityHandoff'
+import { buildSafariOpenUrl } from '@/shared/pwa/safariOpenUrl'
 import PwaOpenBrowserGuide from './PwaOpenBrowserGuide.vue'
 
 defineOptions({
   name: 'PwaFacebookBrowserGate',
 })
+
+const props = defineProps({ includeIos: { type: Boolean, default: false } })
+const isApple = /iPhone|iPad|iPod/i.test(navigator.userAgent + navigator.platform) ||
+  (/Macintosh|MacIntel/i.test(navigator.userAgent + navigator.platform) && navigator.maxTouchPoints > 1)
 
 const AUTO_OPEN_DELAY_MS = 1000
 const USER_GESTURE_RETRY_THROTTLE_MS = 800
@@ -25,7 +30,7 @@ function buildChromeIntentUrl(url) {
   try {
     const targetUrl = new URL(url, window.location.origin)
     const scheme = targetUrl.protocol.replace(':', '') || 'https'
-    const path = `${targetUrl.host}${targetUrl.pathname}${targetUrl.search}`
+    const path = `${targetUrl.host}${targetUrl.pathname}${targetUrl.search}${props.includeIos ? targetUrl.hash : ''}`
     const fallbackUrl = encodeURIComponent(targetUrl.href)
 
     return `intent://${path}#Intent;scheme=${scheme};package=com.android.chrome;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${fallbackUrl};end`
@@ -34,11 +39,13 @@ function buildChromeIntentUrl(url) {
   }
 }
 
-const shouldUseExternalBrowserGate = isAndroidFacebookInAppBrowserRuntime()
+const shouldUseExternalBrowserGate = isAndroidFacebookInAppBrowserRuntime() ||
+  (props.includeIos && isApple && isFacebookInAppBrowserRuntime())
 const showGuide = shallowRef(shouldUseExternalBrowserGate)
 const currentUrl = resolveCurrentPageUrl()
-const browserType = 'chrome'
-const browserName = t('pwaPage.browserGuide.chrome')
+const browserType = props.includeIos && isApple ? 'safari' : 'chrome'
+const safariOpenUrl = browserType === 'safari' ? buildSafariOpenUrl(currentUrl) : ''
+const browserName = t(`pwaPage.browserGuide.${browserType}`)
 const openLabel = t('pwaPage.browserGuide.openBrowser', {
   browser: browserName,
 })
@@ -51,6 +58,12 @@ let lastUserGestureAttemptAt = 0
 function openCurrentPageInExternalBrowser() {
   if (!shouldUseExternalBrowserGate || typeof window === 'undefined' || !currentUrl) return
 
+  if (browserType === 'safari') {
+    // Keep the private-scheme navigation synchronous with the explicit button click.
+    // Facebook/iOS owns any external-app confirmation; dispatch is not proof of success.
+    if (safariOpenUrl) window.location.href = safariOpenUrl
+    return
+  }
   window.location.href = buildChromeIntentUrl(currentUrl)
 }
 
@@ -68,6 +81,7 @@ function setupUserGestureRetry() {
   if (
     typeof window === 'undefined' ||
     !shouldUseExternalBrowserGate ||
+    browserType === 'safari' ||
     userGestureRetryListening
   ) {
     return
@@ -99,6 +113,7 @@ function scheduleAutoOpen() {
   if (
     typeof window === 'undefined' ||
     !shouldUseExternalBrowserGate ||
+    browserType === 'safari' ||
     autoOpenAttempted
   ) {
     return
@@ -145,6 +160,7 @@ onBeforeUnmount(() => {
     :closable="false"
     :current-url="currentUrl"
     :open-label="openLabel"
+    :manual-only="browserType === 'safari' && !safariOpenUrl"
     @open-browser="retryOpenFromUserGesture"
   />
 </template>

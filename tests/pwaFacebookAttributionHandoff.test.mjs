@@ -67,28 +67,12 @@ test('restores stored Facebook attribution before copying the current PWA query'
   assert.doesNotMatch(resolveIframeUrlSource, /handoff_grant|code_verifier|token/)
 })
 
-test('restores stored Facebook attribution before redirecting the landing tab to H5', () => {
-  const start = installPageSource.indexOf('function resolvePwaRedirectUrl')
-  const end = installPageSource.indexOf('function resolveH5RedirectUrl', start)
-  const resolveRedirectUrlSource = installPageSource.slice(start, end)
-
-  const storedAttributionIndex = resolveRedirectUrlSource.indexOf(
-    'appendStoredPwaFacebookAttributionParams(targetUrl.searchParams)',
-  )
-  const currentQueryIndex = resolveRedirectUrlSource.indexOf(
-    'appendSearchParams(targetUrl.searchParams, new URLSearchParams(window.location.search))',
-  )
-
-  assert.ok(storedAttributionIndex >= 0)
-  assert.ok(currentQueryIndex > storedAttributionIndex)
-  assert.match(installPageSource, /const DIRECT_H5_BLOCKED_PARAM_NAMES = new Set\(/)
-  assert.match(resolveRedirectUrlSource, /removeBlockedDirectH5Params\(targetUrl\.searchParams\)/)
-  assert.match(
-    installPageSource,
-    /DIRECT_H5_BLOCKED_PARAM_NAMES\.has\(key\.toLowerCase\(\)\)/,
-  )
-  assert.match(installPageSource, /'handoff_grant'/)
-  assert.match(installPageSource, /'code_verifier'/)
-  assert.match(installPageSource, /'pwa_app'/)
-  assert.match(installPageSource, /'token'/)
+test('landing page delegates to the shared H5 builder with stored attribution', () => {
+  const shared = readFileSync(new URL('../src/shared/pwa/landingH5Url.js', import.meta.url), 'utf8')
+  const service = readFileSync(new URL('../src/services/landingH5Redirect.js', import.meta.url), 'utf8')
+  assert.match(installPageSource, /resolveLandingH5Url\(url, props.pwaInfo, isApplePwaRedirectDevice.value\)/)
+  assert.match(service, /appendFacebook: appendStoredPwaFacebookAttributionParams/)
+  assert.match(service, /appendBigo: appendBigoAttributionParams/)
+  assert.ok(shared.indexOf('appendFacebook(targetUrl.searchParams)') < shared.indexOf('appendSearchParams(targetUrl.searchParams, new URLSearchParams(location.search))'))
+  for (const field of ['handoff_grant', 'code_verifier', 'pwa_app', 'token']) assert.ok(shared.includes(`'${field}'`))
 })

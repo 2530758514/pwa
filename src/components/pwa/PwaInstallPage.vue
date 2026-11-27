@@ -12,13 +12,11 @@ import { usePwaAddToHomeAction } from '@/composables/pwa/usePwaAddToHomeAction'
 import { usePwaInstallPrompt } from '@/composables/pwa/usePwaInstallPrompt'
 import { usePwaLaunchAction } from '@/composables/pwa/usePwaLaunchAction'
 import { pwaService } from '@/services/pwa'
-import { appendBigoAttributionParams } from '@/shared/analytics/bigoAttribution'
+import { resolveLandingH5Url } from '@/services/landingH5Redirect'
 import { notifyBigoAppDownload } from '@/shared/analytics/bigoPixel'
 import { pwaAnalytics } from '@/services/pwaAnalytics'
 import { reportFacebookPwaInstall } from '@/shared/analytics/facebookPixel'
-import { appendStoredPwaFacebookAttributionParams } from '@/shared/analytics/pwaLandingAttribution'
 import { H5_APP_URL } from '@/shared/config/env'
-import { applyPwaIdentityParams } from '@/shared/pwa/identityParams'
 import { createDelayedRedirect } from '@/shared/pwa/delayedRedirect'
 import { createQrCodeDataUrl } from '@/shared/utils/qrCode'
 import PwaBottomNav from './PwaBottomNav.vue'
@@ -74,29 +72,6 @@ const IN_APP_OPEN_VUE_ATTEMPT_STORAGE_PREFIX = 'pwa:in-app-vue-open-attempt:'
 const OPEN_BROWSER_AUTO_OPEN_DELAY_MS = 1000
 const OPEN_BROWSER_USER_GESTURE_EVENTS = ['pointerdown', 'touchstart', 'mousedown', 'keydown']
 const OPEN_BROWSER_COPY_ACTION_SELECTOR = '[data-pwa-browser-guide-copy-action]'
-const IOS_H5_REDIRECT_PARAM = 'pwa_ios_h5_redirect'
-const IOS_H5_REDIRECT_VALUE = '1'
-const DIRECT_H5_BLOCKED_PARAM_NAMES = new Set([
-  'client_id',
-  'code',
-  'code_challenge',
-  'code_challenge_method',
-  'code_verifier',
-  'exchange_code',
-  'grant',
-  'handoff_action',
-  'handoff_grant',
-  'handoff_id',
-  'provision_code',
-  'pwa_app',
-  'pwa_launch',
-  'pwa_launch_time',
-  'request_id',
-  'source_client_id',
-  'state',
-  'target_client_id',
-  'token',
-])
 
 const { canPromptInstall, hasInstallPromptEvent, isInstalled, isStandalone, waitForInstallPrompt } =
   usePwaInstallPrompt()
@@ -248,23 +223,6 @@ const installButtonDisabled = computed(
 )
 const hasLoadedPwaInfo = computed(() => Object.keys(props.pwaInfo || {}).length > 0)
 
-function appendSearchParams(targetParams, sourceParams) {
-  sourceParams.forEach((value, key) => {
-    if (!key || targetParams.has(key) || DIRECT_H5_BLOCKED_PARAM_NAMES.has(key.toLowerCase())) {
-      return
-    }
-
-    targetParams.append(key, value)
-  })
-}
-
-function removeBlockedDirectH5Params(targetParams) {
-  Array.from(targetParams.keys()).forEach((key) => {
-    if (DIRECT_H5_BLOCKED_PARAM_NAMES.has(key.toLowerCase())) {
-      targetParams.delete(key)
-    }
-  })
-}
 
 async function prepareInstallPrompt(options = {}) {
   const forceRefresh = options.forceRefresh === true
@@ -368,33 +326,7 @@ function teardownQrCode() {
 }
 
 function resolvePwaRedirectUrl(url) {
-  if (typeof window === 'undefined') return url
-
-  try {
-    const targetUrl = new URL(url, window.location.origin)
-    removeBlockedDirectH5Params(targetUrl.searchParams)
-    appendStoredPwaFacebookAttributionParams(targetUrl.searchParams)
-    appendSearchParams(targetUrl.searchParams, new URLSearchParams(window.location.search))
-
-    const hashQueryIndex = window.location.hash.indexOf('?')
-    if (hashQueryIndex !== -1) {
-      appendSearchParams(
-        targetUrl.searchParams,
-        new URLSearchParams(window.location.hash.slice(hashQueryIndex + 1)),
-      )
-    }
-
-    applyPwaIdentityParams(targetUrl.searchParams, props.pwaInfo)
-    appendBigoAttributionParams(targetUrl.searchParams)
-
-    if (isApplePwaRedirectDevice.value) {
-      targetUrl.searchParams.set(IOS_H5_REDIRECT_PARAM, IOS_H5_REDIRECT_VALUE)
-    }
-
-    return targetUrl.toString()
-  } catch {
-    return url
-  }
+  return resolveLandingH5Url(url, props.pwaInfo, isApplePwaRedirectDevice.value)
 }
 
 function resolveH5RedirectUrl() {

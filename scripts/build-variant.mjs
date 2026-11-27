@@ -5,6 +5,8 @@ const VARIANTS = Object.freeze({
     enabled: true,
     outDir: 'dist-tetris',
   },
+  blank: { enabled: false, outDir: 'dist-blank' },
+  landing: { enabled: false, outDir: 'dist-landing' },
   standard: {
     enabled: false,
     outDir: 'dist-standard',
@@ -18,6 +20,7 @@ if (!variant) {
   throw new Error(`Unknown PWA build variant: ${variantName || '(empty)'}`)
 }
 
+process.env.VITE_SHOW_PWA_LANDING = String(variantName !== 'blank')
 process.env.VITE_ENABLE_TETRIS_LANDING = String(variant.enabled)
 
 await build({

@@ -3,3 +3,6 @@ export const APP_NAME = import.meta.env.VITE_APP_NAME || 'SlotFront H5'
 export const H5_APP_URL = import.meta.env.VITE_H5_APP_URL || ''
 export const TETRIS_LANDING_ENABLED =
   String(import.meta.env.VITE_ENABLE_TETRIS_LANDING ?? 'true').trim().toLowerCase() !== 'false'
+
+export const SHOW_PWA_LANDING =
+  String(import.meta.env.VITE_SHOW_PWA_LANDING ?? 'false').trim().toLowerCase() === 'true'

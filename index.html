@@ -77,6 +77,22 @@
         }
       })()
     </script>
+    <script>
+      ;(function () {
+        if (String('%VITE_SHOW_PWA_LANDING%').trim().toLowerCase() === 'true') return
+        var standalone = window.matchMedia?.('(display-mode: standalone)').matches ||
+          window.matchMedia?.('(display-mode: fullscreen)').matches || navigator.standalone === true
+        var url = new URL(window.location.href)
+        var hash = new URLSearchParams(url.hash.slice(1))
+        var protocol = null
+        try { if (hash.get('protocol_url')) protocol = new URL(hash.get('protocol_url')) } catch {}
+        var launch = url.searchParams.get('pwa_launch') === '1' || hash.get('pwa_launch') === '1' ||
+          protocol?.searchParams.get('pwa_launch') === '1'
+        var attempt = url.searchParams.has('pwa_launch_time') || hash.has('pwa_launch_time') ||
+          protocol?.searchParams.has('pwa_launch_time')
+        if (!standalone && !(launch && !attempt)) document.documentElement.classList.add('pwa-blank-entry')
+      })()
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" href="/pwa-icons/icon-192.png" sizes="any" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -92,6 +108,9 @@
         margin: 0;
         background: #000000;
       }
+
+      html.pwa-blank-entry, .pwa-blank-entry body { background: #fff; }
+      .pwa-blank-entry .identity-first-paint { display: none; }
 
       #app {
         min-height: 100vh;

@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="app"></div><script type="module">
+import { createApp, h, reactive } from 'vue'
+import '/src/style.css'
+import Guide from '/src/components/pwa/PwaBlankBrowserGuide.vue'
+window.guideProps = reactive({ amount: '', confirmed: false })
+createApp({ setup: () => () => h(Guide, window.guideProps) }).mount('#app')
+</script></body></html>

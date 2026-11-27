@@ -146,6 +146,7 @@ export function usePwaInfo({ autoLoad = true } = {}) {
 
 export function useSharedPwaInfo() {
   return {
+    error: readonly(error),
     pwaInfo: readonly(pwaInfo),
     loading: readonly(loading),
     refreshing: readonly(refreshing),

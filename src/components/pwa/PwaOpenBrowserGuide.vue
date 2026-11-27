@@ -10,6 +10,7 @@ defineOptions({
 const visible = defineModel({ type: Boolean, default: false })
 
 const props = defineProps({
+  manualOnly: { type: Boolean, default: false },
   currentUrl: {
     type: String,
     required: true,
@@ -135,7 +136,8 @@ function close() {
         <span>{{ t('pwaPage.browserGuide.stepOpenSuffix') }}</span>
       </p>
 
-      <button type="button" class="pwa-open-browser-guide__chrome" @click="emit('open-browser')">
+      <p v-if="manualOnly" class="pwa-open-browser-guide__step">Use Facebook’s menu to open this page in Safari, or copy the link below and paste it into Safari.</p>
+      <button v-else type="button" class="pwa-open-browser-guide__chrome" @click="emit('open-browser')">
         <span
           class="pwa-open-browser-guide__browser-icon"
           :class="`pwa-open-browser-guide__browser-icon--${browserType}`"

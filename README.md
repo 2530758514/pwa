@@ -42,3 +42,35 @@ PWA installability is checked against the files that the browser receives from t
 - The server must fallback app routes to `index.html`, but must not fallback `*.webmanifest`, `/sw.js`, or icon files to HTML.
 
 If Android Chrome has already seen an old service worker, clear site data or unregister the old service worker before retesting. A stale `/sw.js` can keep returning an old dynamic-manifest 404 even when the page HTML has already updated.
+
+
+## 界面版与白屏跳转版
+
+`VITE_SHOW_PWA_LANDING` 是构建开关，默认 `false`；设为 `true` 展示原落地页。它不是 URL 参数，两个版本需分别构建、分别部署。
+
+| 命令 | 产物 | 行为 |
+| --- | --- | --- |
+| `npm run build:blank` | `dist-blank/` | 白屏入口，Facebook 中先显示浏览器引导 |
+| `npm run build:landing` | `dist-landing/` | 原标准落地页 |
+| `npm run build:standard` | `dist-standard/` | 保持原标准界面版 |
+| `npm run build:tetris` | `dist-tetris/` | 保持原俄罗斯方块界面版 |
+
+本地预览：`npm run preview:blank`（4011）和 `npm run preview:landing`（4012）。部署上传对应目录的全部产物，包括 `sw.js` 和 manifest，不使用 `standalone-redirect/index.html`。两个发布应使用各自配置正确的站点域名，保留原 PWA 的 API 代理配置；本地预览也需要可用的后端代理。
+
+白屏版只改变普通浏览器入口：Android 和 iOS Facebook 显示白屏专属金色 Open in Browser 引导，分别尝试打开 Chrome 和 Safari，在 Facebook 内不跳 H5。外部浏览器取得新配置后，沿用原参数与归因处理自动进入 H5；统计最多等待 200 毫秒，不自动产生安装点击或下载事件。已安装 PWA 及桌面启动链接仍进入原 iframe 壳。
+
+白屏版通过 Chrome Intent 或 Safari 私有协议尝试外部打开，保留失败时使用 Facebook 菜单打开浏览器的说明，不把发起跳转当作唤起成功。原界面版仍保留旧引导组件与复制链接方式。Chrome Intent 和 Safari 交接效果需真机验证。
+
+验证命令：`node --test tests/*.test.mjs standalone-redirect/verify.mjs`。
+
+浏览器回归：先启动两个预览，再用 Playwright CLI 执行 `run-code --filename scripts/verify-landing-browser.cjs`。脚本使用模拟接口，覆盖十种入口场景并在 `output/` 保存截图，不代表真实后端或真机验收。
+
+开发、Android 调试、测试和正式环境均显式配置 `VITE_SHOW_PWA_LANDING=false`。`npm run dev` 默认白屏；`npm run build:test` 使用 test 模式输出 `dist/` 白屏包；`npm run build` 使用 production 模式输出 `dist/` 白屏包。环境变量在启动/构建时读取，修改后需重启或重新构建。明确指定样式的 `build:landing`、`build:standard`、`build:tetris` 会强制开启原界面，不受环境文件中 false 的影响。
+
+### 白屏版 Facebook 金色引导
+
+白屏入口使用独立的金色底部弹窗和纯黑遮罩，没有关闭按钮、取消或安装教程；原界面版的浏览器引导保持不变。奖励只展示本次 detail 成功返回的 `download_reward_amount`，缺失或非法时不显示金额区域，零金额正常显示。
+
+Android Chrome Intent 与 iOS HTTPS Safari 协议均在弹窗挂载约一秒后自动尝试一次，不因返回页面或配置刷新而重复。提前点击 Open in Browser 会取消待执行的自动尝试；后续按钮点击允许主动重试，短时间重复点击会节流。iOS HTTP 调试页面不会调用 Safari 私有协议。失败或取消不关闭弹窗，也不在 Facebook 内跳 H5。系统提示与真实浏览器交接仍需 HTTPS 真机验收。
+
+金色弹窗组件回归：运行 `npx vite --port 4013`，再用 Playwright CLI 执行 `run-code --filename scripts/verify-blank-guide-browser.cjs`，覆盖金额更新、零金额、长金额、无效数据、图片失败与窄屏/横屏，截图输出在 `output/`。
