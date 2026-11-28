@@ -1,5 +1,5 @@
 const MANIFEST_CACHE_NAME = 'pwa-shell-manifest-v2'
-const SW_VERSION = 'pwa-shell-runtime-v15'
+const SW_VERSION = 'pwa-shell-runtime-v16'
 const APP_CACHE_NAME = SW_VERSION
 const APP_CACHE_PREFIX = 'pwa-shell-runtime-'
 const NOTIFICATION_NAVIGATION_CACHE_NAME = 'pwa-shell-notification-navigation-v1'
@@ -289,6 +289,27 @@ async function openOrFocusShellWindow(navigation) {
       await saveNotificationNavigation(navigation)
     } catch {
       // An already-open shell can still consume the direct postMessage below.
+    }
+  }
+
+  if (/Android/i.test(self.navigator?.userAgent || '')) {
+    let openedClient
+    let launchRejected = false
+    try {
+      // Let Android resolve the installed PWA instead of focusing a browser tab.
+      openedClient = await self.clients.openWindow(
+        new URL(APP_SHELL_PATH, self.location.origin).toString(),
+      )
+    } catch {
+      // Only a rejected launch falls back to the existing window selection.
+      launchRejected = true
+    }
+
+    if (!launchRejected) {
+      if (navigation && openedClient && new URL(openedClient.url).origin === self.location.origin) {
+        openedClient.postMessage({ type: NOTIFICATION_NAVIGATION_MESSAGE_TYPE, navigation })
+      }
+      return openedClient
     }
   }
 
